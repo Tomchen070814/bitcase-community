@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#071520" />
+    <title>Bitcase | Offline</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { min-height: 100svh; margin: 0; display: grid; place-items: center; background: #071520; color: #edf2ef; }
+      main { width: min(32rem, calc(100% - 3rem)); border: 1px solid #49616e; background: #102737; padding: 2rem; box-shadow: 0 24px 80px #0008; }
+      .mark { display: grid; width: 4rem; height: 4rem; place-items: center; border: 1px solid #ef987a; border-radius: 50%; color: #ffc4b0; font: 600 2.3rem Georgia, serif; box-shadow: 0 0 0 .5rem #d66d4f1f; }
+      h1 { margin: 1.5rem 0 .75rem; font: 600 1.75rem Georgia, serif; }
+      p { margin: 0; color: #aec0c7; line-height: 1.7; }
+      button { margin-top: 1.5rem; border: 1px solid #d66d4f; background: #d66d4f; color: white; padding: .75rem 1rem; font: inherit; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">Ω</div>
+      <h1>Bitcase 暂时离线</h1>
+      <p>网络恢复后即可继续同步私人 Skill 库。出于安全考虑，账户与 API 数据不会被离线缓存。</p>
+      <button type="button" onclick="location.reload()">重新连接</button>
+    </main>
+  </body>
+</html>

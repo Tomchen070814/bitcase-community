@@ -1,0 +1,6 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="15" fill="#071520"/>
+  <circle cx="32" cy="32" r="23" fill="#102737" stroke="#d66d4f" stroke-width="2"/>
+  <circle cx="32" cy="32" r="18" fill="none" stroke="#49616e"/>
+  <text x="32" y="43" text-anchor="middle" fill="#f5eae4" font-family="Georgia, Times New Roman, serif" font-size="32" font-weight="600">Ω</text>
+</svg>
