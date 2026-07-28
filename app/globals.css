@@ -3714,6 +3714,41 @@ kbd {
   font-size: 10px;
 }
 
+.radar-ai-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: -6px 0 22px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 54%, transparent);
+  padding: 12px 15px;
+  color: var(--accent);
+}
+
+.radar-ai-note.fallback {
+  border-color: var(--ink-faint);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  color: var(--ink-faint);
+}
+
+.radar-ai-note strong,
+.radar-ai-note span {
+  display: block;
+}
+
+.radar-ai-note strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.radar-ai-note span {
+  margin-top: 3px;
+  color: var(--ink-soft);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
 .radar-lanes {
   display: grid;
   gap: 34px;

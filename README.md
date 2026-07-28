@@ -84,6 +84,20 @@ cp .env.example .env.local
 `GITHUB_RADAR_TOKEN` raises GitHub API limits but is not required for basic use.
 Never expose this token through a client-side variable.
 
+### Kimi AI planning for Radar
+
+The hosted site can call Cloudflare Workers AI directly to let Kimi K2.6 plan
+Radar's focus, adjacent, and wildcard search lanes. Requests stay server-side
+and are protected by per-visitor and global daily limits. If AI is unavailable
+or quota is exhausted, Radar automatically keeps working with its deterministic
+local planner.
+
+For production, set `BITCASE_AI_PROVIDER=cloudflare`,
+`BITCASE_AI_MODEL=@cf/moonshotai/kimi-k2.6`, and the server-only Cloudflare
+account ID and API token shown in `.env.example`. FreeLLMAPI remains available
+as a local development adapter. See
+[Kimi and FreeLLMAPI for Radar](docs/FREELLMAPI.md).
+
 ### Validate a change
 
 ```bash
@@ -105,6 +119,15 @@ Bitcase uses defense in depth:
 
 See [SECURITY.md](SECURITY.md) for the disclosure process and
 [the architecture notes](docs/ARCHITECTURE.md) for trust boundaries.
+
+## AgentChat bundle
+
+Bitcase includes four featured entries from
+[`Tomchen070814/AgentChat`](https://github.com/Tomchen070814/AgentChat).
+Each `SKILL.md` is selected and inspected separately, while the generated
+Stack manifest preserves AgentChat's repository-level runtime dependencies.
+See [AgentChat integration](docs/AGENTCHAT.md) for setup, environment, and
+security details.
 
 ## Community and hosted service
 

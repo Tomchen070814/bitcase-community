@@ -72,12 +72,32 @@ cp .env.example .env.local
 
 然后填写服务端 `GITHUB_RADAR_TOKEN`。不要把它改成客户端变量。
 
+### 为 Radar 接入 Kimi AI
+
+托管站点可直接调用 Cloudflare Workers AI，由 Kimi K2.6 为聚焦、相邻和
+跨领域三条搜索路线生成查询。调用只发生在服务端，并受单访客与全站每日额度
+保护；当 AI 不可用或额度耗尽时，Radar 会自动回退到本地确定性规划。
+
+生产环境按照 `.env.example` 设置 `BITCASE_AI_PROVIDER=cloudflare`、
+`BITCASE_AI_MODEL=@cf/moonshotai/kimi-k2.6`，并配置仅服务端使用的
+Cloudflare Account ID 与 API Token。本地开发仍可使用 FreeLLMAPI 适配器。
+详见 [Radar 的 Kimi 与 FreeLLMAPI 配置](docs/FREELLMAPI.md)。
+
 验证修改：
 
 ```bash
 npm run lint
 npm test
 ```
+
+## AgentChat 集成
+
+Bitcase 现在提供
+[`Tomchen070814/AgentChat`](https://github.com/Tomchen070814/AgentChat)
+仓库中的四个精选 Skill。每个 `SKILL.md` 会被单独选择和检查，生成的 Stack
+清单则会保留 AgentChat 的整仓运行时依赖，避免只复制单个目录后无法运行。
+配置、环境变量与安全说明见
+[AgentChat 集成文档](docs/AGENTCHAT.md)。
 
 ## 开源与官方云服务边界
 

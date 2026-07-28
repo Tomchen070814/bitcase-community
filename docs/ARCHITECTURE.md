@@ -10,6 +10,8 @@ flowchart TD
   UI --> API["Same-origin Worker API"]
   API --> GitHub["GitHub source and metadata"]
   API --> Registry["skills.sh public discovery"]
+  API --> WorkersAI["Cloudflare Workers AI / Kimi K2.6"]
+  API -. local development .-> FreeLLM["Self-hosted FreeLLMAPI"]
   API --> D1["D1 accounts, libraries, feedback"]
   UI --> Handoff["Codex Stack and handshake"]
 ```
@@ -22,6 +24,7 @@ flowchart TD
 | Localization | `app/i18n.ts` | Six supported locales |
 | Source inspection | `app/lib/radar-inspection.ts` | Locate, parse, hash, explain, and flag Skill files |
 | GitHub discovery | `app/lib/radar-search.ts` | Deterministic search queries and repository signals |
+| AI search planning | `app/lib/radar-ai.ts` | Cloudflare Workers AI production adapter, FreeLLMAPI development adapter, validated output, and local fallback |
 | Registry discovery | `app/lib/skills-network.ts` | skills.sh feed and exact URL resolution |
 | Handoff | `app/lib/alpha-three.ts` | Stack identity, installation handshake, quarantine state |
 | Persistence | `app/lib/bitcase-cloud.ts` | Accounts, libraries, tokens, and privacy-bounded analytics |

@@ -34,11 +34,24 @@ import {
   SkillsNetworkError,
   validateSkillsNetworkView,
 } from "../app/lib/skills-network";
+import {
+  planRadarQueries,
+  RadarAiError,
+  validateRadarAiInput,
+} from "../app/lib/radar-ai";
 
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   BITCASE_OWNER_EMAIL?: string;
+  BITCASE_AI_PROVIDER?: string;
+  BITCASE_AI_BASE_URL?: string;
+  BITCASE_AI_MODEL?: string;
+  BITCASE_AI_DAILY_LIMIT?: string;
+  BITCASE_AI_GLOBAL_DAILY_LIMIT?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  FREELLMAPI_API_KEY?: string;
   GITHUB_RADAR_TOKEN?: string;
   IMAGES: {
     input(stream: ReadableStream): {
@@ -70,6 +83,113 @@ async function handleBitcaseApi(
     if (!identity) return unauthorized();
     const locale = url.searchParams.get("locale") || "en";
     return json({ account: await readBetaAccount(db, identity, locale) });
+  }
+
+  if (url.pathname === "/api/radar/plan") {
+    if (method !== "POST") {
+      return json({ error: "method_not_allowed" }, { status: 405 });
+    }
+    const origin = request.headers.get("origin");
+    if (origin && origin !== url.origin) {
+      return json({ error: "forbidden_origin" }, { status: 403 });
+    }
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > 8192) {
+      return json({ error: "payload_too_large" }, { status: 413 });
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: "invalid_json" }, { status: 400 });
+    }
+    const input = validateRadarAiInput(body);
+    if (!input) {
+      return json({ error: "invalid_ai_plan" }, { status: 400 });
+    }
+
+    const provider = env.BITCASE_AI_PROVIDER?.trim();
+    const cloudflareAccountId = env.CLOUDFLARE_ACCOUNT_ID?.trim();
+    const cloudflareApiToken = env.CLOUDFLARE_API_TOKEN?.trim();
+    const freeLlmApiKey = env.FREELLMAPI_API_KEY?.trim();
+    const freeLlmBaseUrl = env.BITCASE_AI_BASE_URL?.trim();
+    const providerSecret =
+      provider === "cloudflare" ? cloudflareApiToken : freeLlmApiKey;
+    const configured =
+      (provider === "cloudflare" &&
+        cloudflareAccountId &&
+        cloudflareApiToken) ||
+      (provider === "freellmapi" &&
+        freeLlmBaseUrl &&
+        freeLlmApiKey);
+    if (!configured || !providerSecret) {
+      return json({ error: "ai_not_configured" }, { status: 503 });
+    }
+    const model =
+      env.BITCASE_AI_MODEL?.trim() ||
+      (provider === "cloudflare"
+        ? "@cf/moonshotai/kimi-k2.6"
+        : "kimi-k2.6");
+    const dailyLimit = clampDailyLimit(
+      env.BITCASE_AI_DAILY_LIMIT,
+      authenticatedEmail(request) ? 20 : 3,
+    );
+    const globalDailyLimit = clampDailyLimit(
+      env.BITCASE_AI_GLOBAL_DAILY_LIMIT,
+      100,
+      10000,
+    );
+    const visitorAllowed = await consumeAiAllowance(
+      db,
+      aiActor(request),
+      providerSecret,
+      dailyLimit,
+    );
+    if (!visitorAllowed) {
+      return json(
+        { error: "ai_daily_limit", dailyLimit },
+        { status: 429 },
+      );
+    }
+    const globallyAllowed = await consumeAiAllowance(
+      db,
+      "bitcase-global",
+      providerSecret,
+      globalDailyLimit,
+    );
+    if (!globallyAllowed) {
+      return json(
+        { error: "ai_global_daily_limit", globalDailyLimit },
+        { status: 429 },
+      );
+    }
+
+    try {
+      const plan =
+        provider === "cloudflare"
+          ? await planRadarQueries(input, {
+              provider,
+              accountId: cloudflareAccountId!,
+              apiToken: cloudflareApiToken!,
+              model,
+            })
+          : await planRadarQueries(input, {
+              provider: "freellmapi",
+              baseUrl: freeLlmBaseUrl!,
+              apiKey: freeLlmApiKey!,
+              model,
+            });
+      return json(
+        { plan },
+        { headers: { "cache-control": "no-store" } },
+      );
+    } catch (error) {
+      if (error instanceof RadarAiError) {
+        return json({ error: error.code }, { status: error.httpStatus });
+      }
+      return json({ error: "ai_provider_error" }, { status: 502 });
+    }
   }
 
   if (url.pathname === "/api/skills-network/feed") {
@@ -319,6 +439,85 @@ async function handleBitcaseApi(
   }
 
   return null;
+}
+
+function aiActor(request: Request) {
+  return (
+    authenticatedEmail(request) ||
+    request.headers.get("cf-connecting-ip") ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "anonymous"
+  );
+}
+
+function clampDailyLimit(
+  value: string | undefined,
+  fallback: number,
+  maximum = 100,
+) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed)
+    ? Math.max(1, Math.min(maximum, Math.floor(parsed)))
+    : fallback;
+}
+
+async function consumeAiAllowance(
+  db: D1Database,
+  actor: string,
+  secret: string,
+  limit: number,
+) {
+  const day = new Date().toISOString().slice(0, 10);
+  const actorHash = await hashAiActor(actor, secret);
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ai_generation_usage (
+        usage_day TEXT NOT NULL,
+        actor_hash TEXT NOT NULL,
+        request_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (usage_day, actor_hash)
+      )`,
+    )
+    .run();
+  await db
+    .prepare(
+      `INSERT INTO ai_generation_usage
+         (usage_day, actor_hash, request_count, updated_at)
+       VALUES (?, ?, 1, ?)
+       ON CONFLICT(usage_day, actor_hash) DO UPDATE SET
+         request_count = ai_generation_usage.request_count + 1,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(day, actorHash, new Date().toISOString())
+    .run();
+  const row = await db
+    .prepare(
+      `SELECT request_count
+       FROM ai_generation_usage
+       WHERE usage_day = ? AND actor_hash = ?`,
+    )
+    .bind(day, actorHash)
+    .first<{ request_count: number }>();
+  return Number(row?.request_count || 0) <= limit;
+}
+
+async function hashAiActor(actor: string, secret: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(actor),
+  );
+  return Array.from(new Uint8Array(signature), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 // Image security config. SVG sources with .svg extension auto-skip the

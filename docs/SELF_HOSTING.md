@@ -18,9 +18,20 @@ needed.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `GITHUB_RADAR_TOKEN` | No | Higher GitHub API rate limit |
+| `BITCASE_AI_PROVIDER` | No | `cloudflare` for production or `freellmapi` for local development |
+| `BITCASE_AI_MODEL` | No | Cloudflare default: `@cf/moonshotai/kimi-k2.6` |
+| `BITCASE_AI_DAILY_LIMIT` | No | Per-visitor daily request allowance |
+| `BITCASE_AI_GLOBAL_DAILY_LIMIT` | No | Whole-site daily request allowance |
+| `CLOUDFLARE_ACCOUNT_ID` | With Cloudflare AI | Server-side Cloudflare account identifier |
+| `CLOUDFLARE_API_TOKEN` | With Cloudflare AI | Server-side token with Workers AI read and edit access |
+| `BITCASE_AI_BASE_URL` | With FreeLLMAPI | Local or hosted FreeLLMAPI `/v1` endpoint |
+| `FREELLMAPI_API_KEY` | With FreeLLMAPI | FreeLLMAPI unified server-side key |
 | `BITCASE_OWNER_EMAIL` | No | Owner-only aggregate analytics route |
 
-Never expose either variable through `NEXT_PUBLIC_*`.
+Never expose a token, key, account identifier, or owner identity through
+`NEXT_PUBLIC_*`. The recommended hosted configuration calls Cloudflare Workers
+AI directly. `localhost` FreeLLMAPI works only when Bitcase and FreeLLMAPI run
+on the same machine. See [Kimi and FreeLLMAPI for Radar](FREELLMAPI.md).
 
 ## Authentication warning
 

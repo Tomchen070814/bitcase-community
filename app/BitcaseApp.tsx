@@ -91,8 +91,10 @@ import {
   setAnonymousAnalyticsEnabled,
 } from "./lib/product-analytics";
 import { planSkillIntake } from "./lib/radar-inspection";
+import type { RadarAiPlan } from "./lib/radar-ai";
 import {
   SkillsNetworkEntry,
+  SkillInstallation,
   SkillsNetworkResolved,
   SkillsNetworkView,
 } from "./lib/skills-network";
@@ -128,6 +130,8 @@ type Skill = {
   quarantineStatus?: "none" | "review";
   sourceInspectionComplete?: boolean;
   registryUrl?: string;
+  registrySource?: SkillsNetworkEntry["origin"];
+  installation?: SkillInstallation;
   descriptionI18n?: Partial<Record<Locale, string>>;
 };
 
@@ -189,6 +193,8 @@ type GithubRepo = {
   inspection?: CandidateInspection;
   selectedSkillPath?: string;
   registryUrl?: string;
+  registrySource?: SkillsNetworkEntry["origin"];
+  installation?: SkillInstallation;
 };
 
 type SourceProfile = {
@@ -876,6 +882,10 @@ function buildStackManifest(
           url: skill.sourceUrl || null,
           skillPath: skill.skillPath || null,
         },
+        installation: skill.installation || {
+          mode: "single-skill-copy",
+          target: `.agents/skills/${skill.id}`,
+        },
         verification: {
           state: readiness.state,
           evidence: readiness.evidence,
@@ -1250,6 +1260,7 @@ export default function BitcaseApp({
   });
   const [radarResults, setRadarResults] = useState<GithubRepo[]>([]);
   const [radarSeed, setRadarSeed] = useState("");
+  const [radarAiPlan, setRadarAiPlan] = useState<RadarAiPlan | null>(null);
   const [dismissedRepoIds, setDismissedRepoIds] = useState<number[]>([]);
   const [radarFeedback, setRadarFeedback] = useState<RadarFeedback>({
     likedTopics: [],
@@ -1716,7 +1727,7 @@ export default function BitcaseApp({
           radarFeedback.likedTopics[0] ||
           interests[0]?.topic ||
           "agent skills";
-        const queryPlan: Array<{
+        let queryPlan: Array<{
           lane: GithubRepo["lane"];
           topic: string;
         }> = [
@@ -1724,6 +1735,34 @@ export default function BitcaseApp({
           { lane: "adjacent", topic: getAdjacentTopic(primaryTopic) },
           { lane: "wildcard", topic: getWildcardTopic(primaryTopic) },
         ];
+        try {
+          const planResponse = await fetch("/api/radar/plan", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              seed: radarSeed,
+              locale,
+              interests: interests.map((interest) => interest.topic),
+              likedTopics: radarFeedback.likedTopics,
+              dislikedTopics: radarFeedback.dislikedTopics,
+            }),
+            cache: "no-store",
+          });
+          const planPayload = (await planResponse
+            .json()
+            .catch(() => null)) as { plan?: RadarAiPlan } | null;
+          if (planResponse.ok && planPayload?.plan?.queries.length === 3) {
+            queryPlan = planPayload.plan.queries.map(({ lane, topic }) => ({
+              lane,
+              topic,
+            }));
+            setRadarAiPlan(planPayload.plan);
+          } else {
+            setRadarAiPlan(null);
+          }
+        } catch {
+          setRadarAiPlan(null);
+        }
         const response = await fetch("/api/radar/search", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -2256,9 +2295,16 @@ export default function BitcaseApp({
               inspection.description ||
               auditedRepo.description,
             category: "工程",
-            source: repo.registryUrl ? "skills.sh via Bitcase" : "GitHub Radar",
+            source:
+              repo.registrySource === "bitcase-featured"
+                ? "Bitcase featured GitHub"
+                : repo.registryUrl
+                  ? "skills.sh via Bitcase"
+                  : "GitHub Radar",
             sourceUrl: auditedRepo.htmlUrl,
             registryUrl: repo.registryUrl,
+            registrySource: repo.registrySource,
+            installation: repo.installation,
             tags: auditedRepo.topics.length
               ? auditedRepo.topics.slice(0, 5)
               : interests.map((item) => item.topic),
@@ -2369,6 +2415,8 @@ export default function BitcaseApp({
         inspection: inspection as CandidateInspection,
         selectedSkillPath,
         registryUrl: entry.url,
+        registrySource: entry.origin,
+        installation: entry.installation,
         auditStatus: "unverified",
         auditNotes: [],
       });
@@ -3077,6 +3125,7 @@ export default function BitcaseApp({
                 feedback={radarFeedback}
                 results={visibleRadarResults}
                 seed={radarSeed}
+                aiPlan={radarAiPlan}
                 isLoading={isRadarLoading}
                 networkView={skillsNetworkView}
                 networkEntries={skillsNetworkEntries}
@@ -4633,6 +4682,7 @@ function RadarView({
   feedback,
   results,
   seed,
+  aiPlan,
   isLoading,
   networkView,
   networkEntries,
@@ -4659,6 +4709,7 @@ function RadarView({
   feedback: RadarFeedback;
   results: GithubRepo[];
   seed: string;
+  aiPlan: RadarAiPlan | null;
   isLoading: boolean;
   networkView: SkillsNetworkView;
   networkEntries: SkillsNetworkEntry[];
@@ -4848,6 +4899,20 @@ function RadarView({
               liked: feedback.likedTopics.length,
               disliked: feedback.dislikedTopics.length,
             })}
+          </span>
+        </div>
+      </div>
+
+      <div className={`radar-ai-note ${aiPlan ? "live" : "fallback"}`}>
+        <Sparkle size={18} weight={aiPlan ? "fill" : "regular"} />
+        <div>
+          <strong>
+            {aiPlan ? t("radarAiLive") : t("radarAiFallback")}
+          </strong>
+          <span>
+            {aiPlan
+              ? `${aiPlan.provider} / ${aiPlan.model} · ${t("radarAiLiveLead")}`
+              : t("radarAiFallbackLead")}
           </span>
         </div>
       </div>
