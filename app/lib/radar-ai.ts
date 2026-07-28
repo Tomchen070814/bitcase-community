@@ -8,9 +8,11 @@ export type RadarAiQuery = {
 
 export type RadarAiPlan = {
   queries: RadarAiQuery[];
-  provider: "freellmapi";
+  provider: RadarAiProvider;
   model: string;
 };
+
+export type RadarAiProvider = "cloudflare" | "freellmapi";
 
 export type RadarAiInput = {
   seed: string;
@@ -20,12 +22,22 @@ export type RadarAiInput = {
   dislikedTopics: string[];
 };
 
-type RadarAiConfig = {
-  baseUrl: string;
-  apiKey: string;
+type RadarAiBaseConfig = {
   model: string;
   fetcher?: typeof fetch;
 };
+
+type RadarAiConfig =
+  | (RadarAiBaseConfig & {
+      provider: "cloudflare";
+      accountId: string;
+      apiToken: string;
+    })
+  | (RadarAiBaseConfig & {
+      provider: "freellmapi";
+      baseUrl: string;
+      apiKey: string;
+    });
 
 const LANES = new Set<RadarLane>(["focus", "adjacent", "wildcard"]);
 const SUPPORTED_LOCALES = new Set([
@@ -58,18 +70,18 @@ export async function planRadarQueries(
   config: RadarAiConfig,
 ): Promise<RadarAiPlan> {
   const fetcher = config.fetcher || fetch;
-  const endpoint = chatCompletionsEndpoint(config.baseUrl);
+  const connection = resolveConnection(config);
   const model = compact(config.model, 160);
-  if (!model || !config.apiKey.trim()) {
+  if (!model || !connection.credential) {
     throw new RadarAiError("ai_not_configured", 503);
   }
 
   let response: Response;
   try {
-    response = await fetcher(endpoint, {
+    response = await fetcher(connection.endpoint, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${config.apiKey.trim()}`,
+        authorization: `Bearer ${connection.credential}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
@@ -113,7 +125,27 @@ export async function planRadarQueries(
   const queries = parseRadarQueries(
     data.choices?.[0]?.message?.content || "",
   );
-  return { queries, provider: "freellmapi", model };
+  return { queries, provider: config.provider, model };
+}
+
+function resolveConnection(config: RadarAiConfig) {
+  if (config.provider === "freellmapi") {
+    return {
+      endpoint: chatCompletionsEndpoint(config.baseUrl),
+      credential: config.apiKey.trim(),
+    };
+  }
+
+  const accountId = config.accountId.trim();
+  if (!/^[a-f0-9]{32}$/i.test(accountId)) {
+    throw new RadarAiError("ai_not_configured", 503);
+  }
+  return {
+    endpoint:
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}` +
+      "/ai/v1/chat/completions",
+    credential: config.apiToken.trim(),
+  };
 }
 
 function buildRadarPrompt(input: RadarAiInput) {

@@ -48,6 +48,9 @@ interface Env {
   BITCASE_AI_BASE_URL?: string;
   BITCASE_AI_MODEL?: string;
   BITCASE_AI_DAILY_LIMIT?: string;
+  BITCASE_AI_GLOBAL_DAILY_LIMIT?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
   FREELLMAPI_API_KEY?: string;
   GITHUB_RADAR_TOKEN?: string;
   IMAGES: {
@@ -106,39 +109,77 @@ async function handleBitcaseApi(
       return json({ error: "invalid_ai_plan" }, { status: 400 });
     }
 
-    const apiKey = env.FREELLMAPI_API_KEY?.trim();
-    const baseUrl = env.BITCASE_AI_BASE_URL?.trim();
-    if (
-      env.BITCASE_AI_PROVIDER !== "freellmapi" ||
-      !apiKey ||
-      !baseUrl
-    ) {
+    const provider = env.BITCASE_AI_PROVIDER?.trim();
+    const cloudflareAccountId = env.CLOUDFLARE_ACCOUNT_ID?.trim();
+    const cloudflareApiToken = env.CLOUDFLARE_API_TOKEN?.trim();
+    const freeLlmApiKey = env.FREELLMAPI_API_KEY?.trim();
+    const freeLlmBaseUrl = env.BITCASE_AI_BASE_URL?.trim();
+    const providerSecret =
+      provider === "cloudflare" ? cloudflareApiToken : freeLlmApiKey;
+    const configured =
+      (provider === "cloudflare" &&
+        cloudflareAccountId &&
+        cloudflareApiToken) ||
+      (provider === "freellmapi" &&
+        freeLlmBaseUrl &&
+        freeLlmApiKey);
+    if (!configured || !providerSecret) {
       return json({ error: "ai_not_configured" }, { status: 503 });
     }
-    const model = env.BITCASE_AI_MODEL?.trim() || "kimi-k2.6";
+    const model =
+      env.BITCASE_AI_MODEL?.trim() ||
+      (provider === "cloudflare"
+        ? "@cf/moonshotai/kimi-k2.6"
+        : "kimi-k2.6");
     const dailyLimit = clampDailyLimit(
       env.BITCASE_AI_DAILY_LIMIT,
       authenticatedEmail(request) ? 20 : 3,
     );
-    const allowed = await consumeAiAllowance(
+    const globalDailyLimit = clampDailyLimit(
+      env.BITCASE_AI_GLOBAL_DAILY_LIMIT,
+      100,
+      10000,
+    );
+    const visitorAllowed = await consumeAiAllowance(
       db,
       aiActor(request),
-      apiKey,
+      providerSecret,
       dailyLimit,
     );
-    if (!allowed) {
+    if (!visitorAllowed) {
       return json(
         { error: "ai_daily_limit", dailyLimit },
         { status: 429 },
       );
     }
+    const globallyAllowed = await consumeAiAllowance(
+      db,
+      "bitcase-global",
+      providerSecret,
+      globalDailyLimit,
+    );
+    if (!globallyAllowed) {
+      return json(
+        { error: "ai_global_daily_limit", globalDailyLimit },
+        { status: 429 },
+      );
+    }
 
     try {
-      const plan = await planRadarQueries(input, {
-        baseUrl,
-        apiKey,
-        model,
-      });
+      const plan =
+        provider === "cloudflare"
+          ? await planRadarQueries(input, {
+              provider,
+              accountId: cloudflareAccountId!,
+              apiToken: cloudflareApiToken!,
+              model,
+            })
+          : await planRadarQueries(input, {
+              provider: "freellmapi",
+              baseUrl: freeLlmBaseUrl!,
+              apiKey: freeLlmApiKey!,
+              model,
+            });
       return json(
         { plan },
         { headers: { "cache-control": "no-store" } },
@@ -409,10 +450,14 @@ function aiActor(request: Request) {
   );
 }
 
-function clampDailyLimit(value: string | undefined, fallback: number) {
+function clampDailyLimit(
+  value: string | undefined,
+  fallback: number,
+  maximum = 100,
+) {
   const parsed = Number(value);
   return Number.isFinite(parsed)
-    ? Math.max(1, Math.min(100, Math.floor(parsed)))
+    ? Math.max(1, Math.min(maximum, Math.floor(parsed)))
     : fallback;
 }
 

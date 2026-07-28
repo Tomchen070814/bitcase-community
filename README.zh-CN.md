@@ -72,16 +72,16 @@ cp .env.example .env.local
 
 然后填写服务端 `GITHUB_RADAR_TOKEN`。不要把它改成客户端变量。
 
-### 可选：为 Radar 接入 Kimi AI
+### 为 Radar 接入 Kimi AI
 
-Radar 可以通过自托管 FreeLLMAPI 为聚焦、相邻和跨领域三条搜索路线生成查询。
-默认模型是 `kimi-k2.6`；当路由器或免费额度不可用时，Radar 会自动回退到
-本地确定性规划，不会中断搜索。
+托管站点可直接调用 Cloudflare Workers AI，由 Kimi K2.6 为聚焦、相邻和
+跨领域三条搜索路线生成查询。调用只发生在服务端，并受单访客与全站每日额度
+保护；当 AI 不可用或额度耗尽时，Radar 会自动回退到本地确定性规划。
 
-按照 `.env.example` 配置 `BITCASE_AI_PROVIDER`、`BITCASE_AI_BASE_URL`、
-`BITCASE_AI_MODEL` 和仅服务端使用的 `FREELLMAPI_API_KEY`。托管部署必须使用
-公开可访问的 HTTPS 路由地址，因为云端 Worker 无法访问你电脑上的
-`localhost`。详见 [Radar 的 FreeLLMAPI 配置](docs/FREELLMAPI.md)。
+生产环境按照 `.env.example` 设置 `BITCASE_AI_PROVIDER=cloudflare`、
+`BITCASE_AI_MODEL=@cf/moonshotai/kimi-k2.6`，并配置仅服务端使用的
+Cloudflare Account ID 与 API Token。本地开发仍可使用 FreeLLMAPI 适配器。
+详见 [Radar 的 Kimi 与 FreeLLMAPI 配置](docs/FREELLMAPI.md)。
 
 验证修改：
 

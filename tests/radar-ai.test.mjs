@@ -31,6 +31,7 @@ test("validates and bounds Radar AI context", () => {
 
 test("calls the FreeLLMAPI OpenAI-compatible endpoint with Kimi K2.6", async () => {
   const plan = await planRadarQueries(input, {
+    provider: "freellmapi",
     baseUrl: "https://router.example.com/v1",
     apiKey: "freellmapi-test-key",
     model: "kimi-k2.6",
@@ -87,10 +88,65 @@ test("calls the FreeLLMAPI OpenAI-compatible endpoint with Kimi K2.6", async () 
   );
 });
 
+test("calls Cloudflare Workers AI directly with Kimi K2.6", async () => {
+  const plan = await planRadarQueries(input, {
+    provider: "cloudflare",
+    accountId: "0123456789abcdef0123456789abcdef",
+    apiToken: "cloudflare-test-token",
+    model: "@cf/moonshotai/kimi-k2.6",
+    fetcher: async (url, init) => {
+      assert.equal(
+        url,
+        "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/v1/chat/completions",
+      );
+      assert.equal(
+        new Headers(init?.headers).get("authorization"),
+        "Bearer cloudflare-test-token",
+      );
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.model, "@cf/moonshotai/kimi-k2.6");
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  queries: [
+                    {
+                      lane: "focus",
+                      topic: "hardware test automation",
+                      rationale: "Directly matches hardware testing.",
+                    },
+                    {
+                      lane: "adjacent",
+                      topic: "engineering test documentation",
+                      rationale: "Adds durable test documentation.",
+                    },
+                    {
+                      lane: "wildcard",
+                      topic: "scientific reproducibility workflow",
+                      rationale: "Transfers reproducibility practices.",
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+
+  assert.equal(plan.provider, "cloudflare");
+  assert.equal(plan.model, "@cf/moonshotai/kimi-k2.6");
+});
+
 test("rejects unsafe endpoints and invalid model output", async () => {
   await assert.rejects(
     () =>
       planRadarQueries(input, {
+        provider: "freellmapi",
         baseUrl: "http://router.example.com/v1",
         apiKey: "test-key",
         model: "kimi-k2.6",
@@ -103,6 +159,7 @@ test("rejects unsafe endpoints and invalid model output", async () => {
   await assert.rejects(
     () =>
       planRadarQueries(input, {
+        provider: "freellmapi",
         baseUrl: "http://127.0.0.1:3001/v1",
         apiKey: "test-key",
         model: "kimi-k2.6",
@@ -117,5 +174,18 @@ test("rejects unsafe endpoints and invalid model output", async () => {
     (error) =>
       error instanceof RadarAiError &&
       error.code === "ai_invalid_response",
+  );
+
+  await assert.rejects(
+    () =>
+      planRadarQueries(input, {
+        provider: "cloudflare",
+        accountId: "not-an-account-id",
+        apiToken: "test-token",
+        model: "@cf/moonshotai/kimi-k2.6",
+      }),
+    (error) =>
+      error instanceof RadarAiError &&
+      error.code === "ai_not_configured",
   );
 });
