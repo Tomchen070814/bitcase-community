@@ -106,6 +106,15 @@ Bitcase uses defense in depth:
 See [SECURITY.md](SECURITY.md) for the disclosure process and
 [the architecture notes](docs/ARCHITECTURE.md) for trust boundaries.
 
+## AgentChat bundle
+
+Bitcase includes four featured entries from
+[`Tomchen070814/AgentChat`](https://github.com/Tomchen070814/AgentChat).
+Each `SKILL.md` is selected and inspected separately, while the generated
+Stack manifest preserves AgentChat's repository-level runtime dependencies.
+See [AgentChat integration](docs/AGENTCHAT.md) for setup, environment, and
+security details.
+
 ## Community and hosted service
 
 This repository contains the complete Beta core, including the generic D1

@@ -93,6 +93,7 @@ import {
 import { planSkillIntake } from "./lib/radar-inspection";
 import {
   SkillsNetworkEntry,
+  SkillInstallation,
   SkillsNetworkResolved,
   SkillsNetworkView,
 } from "./lib/skills-network";
@@ -128,6 +129,8 @@ type Skill = {
   quarantineStatus?: "none" | "review";
   sourceInspectionComplete?: boolean;
   registryUrl?: string;
+  registrySource?: SkillsNetworkEntry["origin"];
+  installation?: SkillInstallation;
   descriptionI18n?: Partial<Record<Locale, string>>;
 };
 
@@ -189,6 +192,8 @@ type GithubRepo = {
   inspection?: CandidateInspection;
   selectedSkillPath?: string;
   registryUrl?: string;
+  registrySource?: SkillsNetworkEntry["origin"];
+  installation?: SkillInstallation;
 };
 
 type SourceProfile = {
@@ -875,6 +880,10 @@ function buildStackManifest(
           label: skill.source,
           url: skill.sourceUrl || null,
           skillPath: skill.skillPath || null,
+        },
+        installation: skill.installation || {
+          mode: "single-skill-copy",
+          target: `.agents/skills/${skill.id}`,
         },
         verification: {
           state: readiness.state,
@@ -2256,9 +2265,16 @@ export default function BitcaseApp({
               inspection.description ||
               auditedRepo.description,
             category: "工程",
-            source: repo.registryUrl ? "skills.sh via Bitcase" : "GitHub Radar",
+            source:
+              repo.registrySource === "bitcase-featured"
+                ? "Bitcase featured GitHub"
+                : repo.registryUrl
+                  ? "skills.sh via Bitcase"
+                  : "GitHub Radar",
             sourceUrl: auditedRepo.htmlUrl,
             registryUrl: repo.registryUrl,
+            registrySource: repo.registrySource,
+            installation: repo.installation,
             tags: auditedRepo.topics.length
               ? auditedRepo.topics.slice(0, 5)
               : interests.map((item) => item.topic),
@@ -2369,6 +2385,8 @@ export default function BitcaseApp({
         inspection: inspection as CandidateInspection,
         selectedSkillPath,
         registryUrl: entry.url,
+        registrySource: entry.origin,
+        installation: entry.installation,
         auditStatus: "unverified",
         auditNotes: [],
       });

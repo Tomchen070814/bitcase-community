@@ -79,6 +79,15 @@ npm run lint
 npm test
 ```
 
+## AgentChat 集成
+
+Bitcase 现在提供
+[`Tomchen070814/AgentChat`](https://github.com/Tomchen070814/AgentChat)
+仓库中的四个精选 Skill。每个 `SKILL.md` 会被单独选择和检查，生成的 Stack
+清单则会保留 AgentChat 的整仓运行时依赖，避免只复制单个目录后无法运行。
+配置、环境变量与安全说明见
+[AgentChat 集成文档](docs/AGENTCHAT.md)。
+
 ## 开源与官方云服务边界
 
 本仓库公开完整 Beta 核心，也包括通用 D1 账户和库同步实现。未来官方
