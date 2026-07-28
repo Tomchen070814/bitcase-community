@@ -18,9 +18,17 @@ needed.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `GITHUB_RADAR_TOKEN` | No | Higher GitHub API rate limit |
+| `BITCASE_AI_PROVIDER` | No | Set to `freellmapi` to enable Radar AI planning |
+| `BITCASE_AI_BASE_URL` | With Radar AI | FreeLLMAPI `/v1` endpoint |
+| `BITCASE_AI_MODEL` | No | Defaults to `kimi-k2.6` |
+| `BITCASE_AI_DAILY_LIMIT` | No | Per-visitor request allowance |
+| `FREELLMAPI_API_KEY` | With Radar AI | FreeLLMAPI unified server-side key |
 | `BITCASE_OWNER_EMAIL` | No | Owner-only aggregate analytics route |
 
-Never expose either variable through `NEXT_PUBLIC_*`.
+Never expose a token, key, or owner identity through `NEXT_PUBLIC_*`. Hosted
+deployments need a public HTTPS FreeLLMAPI endpoint; `localhost` works only
+when Bitcase and FreeLLMAPI run on the same machine. See
+[FreeLLMAPI for Radar](FREELLMAPI.md).
 
 ## Authentication warning
 

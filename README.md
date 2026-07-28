@@ -84,6 +84,18 @@ cp .env.example .env.local
 `GITHUB_RADAR_TOKEN` raises GitHub API limits but is not required for basic use.
 Never expose this token through a client-side variable.
 
+### Optional Kimi AI planning for Radar
+
+Radar can use a self-hosted FreeLLMAPI router to plan its focus, adjacent, and
+wildcard search lanes. The default model is `kimi-k2.6`; if the router or its
+quota is unavailable, Radar automatically keeps working with its deterministic
+local planner.
+
+Set `BITCASE_AI_PROVIDER`, `BITCASE_AI_BASE_URL`, `BITCASE_AI_MODEL`, and the
+server-only `FREELLMAPI_API_KEY` shown in `.env.example`. Hosted deployments
+need a public HTTPS router URL because their worker cannot reach a laptop's
+`localhost`. See [FreeLLMAPI for Radar](docs/FREELLMAPI.md).
+
 ### Validate a change
 
 ```bash
