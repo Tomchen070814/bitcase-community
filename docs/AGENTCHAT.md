@@ -51,7 +51,7 @@ Optional AgentChat environment variables include `CHROMIUM_PATH`, `CDP_HOST`,
 `HEADLESS`. Start from AgentChat's `.env.example`; do not commit a populated
 `.env`.
 
-Bitcase's optional server-side `GITHUB_RADAR_TOKEN` is separate. It only raises
+Bitcase's optional server-side `GITHUB_SKILL_TOKEN` is separate. It only raises
 GitHub inspection rate limits and does not authenticate AgentChat providers.
 
 ## Security notes

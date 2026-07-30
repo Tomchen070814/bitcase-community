@@ -1,59 +1,28 @@
-# Self-hosting
+# Self-hosting Bitcase
 
-## Local development
+Bitcase has two deployable services: the public site and an independent
+Cloudflare index Worker backed by D1 and R2. The browser keeps its own Skill
+library and seven-day query fallback locally.
+
+## Optional configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `BITCASE_INDEX_API_URL` | Public URL of the independent active-snapshot API. |
+| `GITHUB_SKILL_TOKEN` | Optional server-only token for user-initiated exact-source visualization. |
+
+The token stays server-side. Bitcase does not accept, store, or forward a
+visitor's model API key. The index Worker uses separate `GITHUB_TOKEN` and
+`SYNC_ADMIN_SECRET` Cloudflare Secrets.
+
+## Commands
 
 ```bash
-npm ci
+npm run install:ci
 npm run dev
+npm run lint
+npm test
 ```
 
-The Vite configuration starts a local Cloudflare-compatible runtime and local
-D1 binding. This is the supported community development path.
-
-## Environment
-
-Copy `.env.example` to `.env.local` only when optional server features are
-needed.
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `GITHUB_RADAR_TOKEN` | No | Higher GitHub API rate limit |
-| `BITCASE_AI_PROVIDER` | No | `cloudflare` for production or `freellmapi` for local development |
-| `BITCASE_AI_MODEL` | No | Cloudflare default: `@cf/moonshotai/kimi-k2.6` |
-| `BITCASE_AI_DAILY_LIMIT` | No | Per-visitor daily request allowance |
-| `BITCASE_AI_GLOBAL_DAILY_LIMIT` | No | Whole-site daily request allowance |
-| `CLOUDFLARE_ACCOUNT_ID` | With Cloudflare AI | Server-side Cloudflare account identifier |
-| `CLOUDFLARE_API_TOKEN` | With Cloudflare AI | Server-side token with Workers AI read and edit access |
-| `BITCASE_AI_BASE_URL` | With FreeLLMAPI | Local or hosted FreeLLMAPI `/v1` endpoint |
-| `FREELLMAPI_API_KEY` | With FreeLLMAPI | FreeLLMAPI unified server-side key |
-| `BITCASE_OWNER_EMAIL` | No | Owner-only aggregate analytics route |
-
-Never expose a token, key, account identifier, or owner identity through
-`NEXT_PUBLIC_*`. The recommended hosted configuration calls Cloudflare Workers
-AI directly. `localhost` FreeLLMAPI works only when Bitcase and FreeLLMAPI run
-on the same machine. See [Kimi and FreeLLMAPI for Radar](FREELLMAPI.md).
-
-## Authentication warning
-
-The official deployment uses hosting-provided ChatGPT identity headers.
-Independent deployments must replace this with a trusted server-side identity
-provider before enabling account or cloud-library endpoints.
-
-Do not allow clients to set `oai-authenticated-user-email` through a public
-proxy. If a trusted identity adapter is absent, operate Bitcase in browser-local
-mode.
-
-## Deployment status
-
-The current build and artifact scripts target OpenAI Sites and its
-Cloudflare-compatible runtime. A vendor-neutral deployment package is planned
-but is not yet supported in Beta 1.
-
-The placeholder `project_id` in `.openai/hosting.json` must be replaced by the
-deployment workflow that owns the target Site. It is not a credential.
-
-## Database
-
-Schema changes live in `db/schema.ts`; generated D1 migrations live in
-`drizzle/`. Apply migrations in order and back up user libraries before
-upgrading a public deployment.
+See [INDEX_WORKER.md](INDEX_WORKER.md) for production resource creation,
+migrations, first sync, status checks, and rollback.

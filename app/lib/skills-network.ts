@@ -463,6 +463,8 @@ export async function resolveSkillsNetworkSkill(
     {
       fetcher,
       githubToken: options.githubToken,
+      maxSkillFiles: 3,
+      pathHints: [parsed.slug],
     },
   );
   const selected =

@@ -58,7 +58,7 @@ export function validateRadarSearchQueries(
 ): RadarSearchQuery[] | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as { queries?: unknown };
-  if (!Array.isArray(candidate.queries) || candidate.queries.length !== 3) {
+  if (!Array.isArray(candidate.queries) || candidate.queries.length < 1 || candidate.queries.length > 6) {
     return null;
   }
 
@@ -98,7 +98,7 @@ export async function searchGithubRadar(
   const headers = new Headers({
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": GITHUB_API_VERSION,
-    "User-Agent": "Bitcase-Radar-Alpha",
+    "User-Agent": "Bitcase-Skill-Discovery",
   });
   if (options.githubToken?.trim()) {
     headers.set("Authorization", `Bearer ${options.githubToken.trim()}`);
@@ -109,11 +109,12 @@ export async function searchGithubRadar(
       const endpoint = new URL("https://api.github.com/search/repositories");
       endpoint.searchParams.set(
         "q",
-        `"SKILL.md" ${topic} in:name,description,readme`,
+        `"SKILL.md" ${topic} in:name,description,readme fork:false archived:false`,
       );
-      endpoint.searchParams.set("sort", "updated");
-      endpoint.searchParams.set("order", "desc");
-      endpoint.searchParams.set("per_page", "12");
+      // GitHub's default "best match" order is intentional. Sorting by
+      // recently updated made active but semantically unrelated repositories
+      // outrank the Skill content that best matched the project.
+      endpoint.searchParams.set("per_page", "10");
       endpoint.searchParams.set("page", String(page));
 
       let response: Response;

@@ -117,6 +117,8 @@ type GithubTree = {
 type InspectOptions = {
   githubToken?: string;
   fetcher?: typeof fetch;
+  maxSkillFiles?: number;
+  pathHints?: string[];
 };
 
 const MAX_SKILL_BYTES = 512 * 1024;
@@ -183,7 +185,7 @@ export async function inspectGithubSkill(
   const apiHeaders = githubHeaders(options.githubToken);
   const rawHeaders = new Headers({
     Accept: "text/plain",
-    "User-Agent": "Bitcase-Radar-Alpha",
+    "User-Agent": "Bitcase-Skill-Discovery",
   });
   const rawBase = `https://raw.githubusercontent.com/${encodeURIComponent(
     owner,
@@ -293,7 +295,13 @@ export async function inspectGithubSkill(
     };
   }
 
-  const selectedSkillPaths = skillPaths.slice(0, MAX_SKILL_FILES);
+  const requestedLimit = Number.isFinite(options.maxSkillFiles)
+    ? Math.max(1, Math.min(MAX_SKILL_FILES, Math.floor(options.maxSkillFiles || 1)))
+    : MAX_SKILL_FILES;
+  const selectedSkillPaths = rankSkillPaths(skillPaths, options.pathHints).slice(
+    0,
+    requestedLimit,
+  );
   const skillFiles = await inspectSkillPaths(
     selectedSkillPaths,
     fetcher,
@@ -315,6 +323,45 @@ export async function inspectGithubSkill(
         : []),
     ],
   });
+}
+
+function rankSkillPaths(paths: string[], hints: string[] = []) {
+  const ignored = new Set([
+    "agent",
+    "skill",
+    "skills",
+    "project",
+    "workflow",
+    "implementation",
+    "application",
+  ]);
+  const hintTokens = Array.from(
+    new Set(
+      hints.flatMap(
+        (hint) =>
+          hint
+            .toLocaleLowerCase()
+            .match(/[a-z0-9][a-z0-9+._-]{2,}|[\u3400-\u9fff]{2,}/g) || [],
+      ),
+    ),
+  )
+    .map((token) => token.replace(/[+._-]+/g, " "))
+    .filter((token) => !ignored.has(token));
+  if (!hintTokens.length) return paths;
+  return paths
+    .map((path, index) => {
+      const normalizedPath = path.toLocaleLowerCase().replace(/[_/.-]+/g, " ");
+      const score = hintTokens.reduce((total, token) => {
+        if (!normalizedPath.includes(token)) return total;
+        return total + (/[0-9]/.test(token) ? 5 : 3);
+      }, 0);
+      return { path, index, score };
+    })
+    .sort(
+      (first, second) =>
+        second.score - first.score || first.index - second.index,
+    )
+    .map((item) => item.path);
 }
 
 async function inspectSkillPaths(
@@ -777,7 +824,7 @@ function githubHeaders(token?: string): Headers {
   const headers = new Headers({
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": GITHUB_API_VERSION,
-    "User-Agent": "Bitcase-Radar-Alpha",
+    "User-Agent": "Bitcase-Skill-Discovery",
   });
   if (token?.trim()) {
     headers.set("Authorization", `Bearer ${token.trim()}`);

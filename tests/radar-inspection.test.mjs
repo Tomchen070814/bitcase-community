@@ -59,6 +59,71 @@ Render the final document.`,
   assert.ok(result.skillFiles.every((skill) => skill.contentHash.length === 64));
 });
 
+test("reads relevant paths first when a repository exceeds the inspection limit", async () => {
+  const files = Object.fromEntries([
+    ...Array.from({ length: 13 }, (_, index) => [
+      `skills/alpha-${String(index).padStart(2, "0")}/SKILL.md`,
+      `---\nname: alpha-${index}\ndescription: Generic workflow.\n---\nUse this workflow.`,
+    ]),
+    [
+      "skills/keysight-scpi-control/SKILL.md",
+      `---\nname: keysight-scpi-control\ndescription: Control Keysight instruments over SCPI.\n---\nAutomate laboratory instruments.`,
+    ],
+  ]);
+  const result = await inspectGithubSkill(
+    { fullName: "owner/large-catalog", defaultBranch: "main" },
+    {
+      fetcher: mockGithub(files),
+      maxSkillFiles: 3,
+      pathHints: ["Keysight SCPI instrument control"],
+    },
+  );
+
+  assert.equal(result.inspectedFileCount, 3);
+  assert.equal(result.fileCount, 14);
+  assert.ok(
+    result.skillFiles.some((skill) => skill.name === "keysight-scpi-control"),
+  );
+  assert.equal(result.inspectionComplete, false);
+});
+
+test("normalizes hyphenated path hints before ranking exact Skill folders", async () => {
+  const fetcher = async (input) => {
+    const url = String(input);
+    if (url.includes("/git/trees/main?recursive=1")) {
+      return Response.json({
+        truncated: false,
+        tree: [
+          { type: "blob", path: "skills/alpha/SKILL.md" },
+          { type: "blob", path: "skills/csv-quality/SKILL.md" },
+        ],
+      });
+    }
+    if (url.endsWith("/skills/csv-quality/SKILL.md")) {
+      return new Response(`---
+name: csv-quality
+description: Validate CSV data.
+---
+
+Use this for CSV quality checks.`);
+    }
+    return new Response("Not found", { status: 404 });
+  };
+  const result = await inspectGithubSkill(
+    {
+      fullName: "example/skills",
+      defaultBranch: "main",
+      locale: "zh-CN",
+    },
+    {
+      fetcher,
+      maxSkillFiles: 1,
+      pathHints: ["csv-quality"],
+    },
+  );
+  assert.equal(result.skillFiles[0].path, "skills/csv-quality/SKILL.md");
+});
+
 test("blocks the repository when one Skill contains a direct override", async () => {
   const result = await inspectGithubSkill(
     { fullName: "owner/risky-skill", defaultBranch: "main" },

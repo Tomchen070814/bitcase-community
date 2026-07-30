@@ -1,168 +1,84 @@
 # Bitcase
 
-<p align="center">
-  <img src="public/showcase-cover.png" alt="Bitcase Skill operating library" width="100%">
-</p>
+Bitcase helps you decide which Agent Skills belong in a project.
 
-<p align="center">
-  An open Skill operating library for discovering, inspecting, matching, and handing reusable Agent Skills to Codex.
-</p>
+It has three jobs only:
 
-<p align="center">
-  <a href="https://bitcase-skill-library.tomcjq070814.chatgpt.site">Live Beta</a>
-  ·
-  <a href="README.zh-CN.md">简体中文</a>
-  ·
-  <a href="ROADMAP.md">Roadmap</a>
-  ·
-  <a href="SECURITY.md">Security</a>
-</p>
+1. Visualize Skills with their purpose, source, and available evidence.
+2. Match local and internet Skills to a project brief.
+3. Assemble a minimal, explainable Skill Stack.
 
-> Beta software. Bitcase can surface suspicious instructions and incomplete
-> repository scans, but it cannot prove that a third-party Skill is safe.
-> Review the source and run Skills with least privilege.
+## Product flow
 
-## Why Bitcase exists
+Describe the project on the homepage. Bitcase then:
 
-Agent Skills are scattered across GitHub repositories, registries, and local
-folders. Saving links is easy; knowing what a Skill does, whether it is usable,
-and which Skills belong in a project is not.
+1. maps the brief to distinct project responsibilities;
+2. searches the currently active, versioned Bitcase snapshot;
+3. combines snapshot evidence with Skills already saved in the browser library;
+4. returns the exact repository, commit-pinned file, content hash, check time,
+   license, and review signal;
+5. chooses the smallest set that covers distinct project responsibilities.
 
-Bitcase turns a collection into an operating workflow:
+skills.sh and GitHub are background indexing sources. A visitor search never
+waits for either upstream service. If the index API is unavailable, the browser
+can reuse the same query's most recent successful result for seven days and
+clearly marks it as potentially stale.
 
-1. discover a Skill from GitHub or skills.sh;
-2. read every detected `SKILL.md`;
-3. explain its purpose, limits, permissions, and risks;
-4. deduplicate it by inspected content;
-5. assemble the smallest project Skill Stack;
-6. hand an auditable manifest to Codex; and
-7. record whether each Skill was helpful, unused, conflicting, or failed.
+## Coverage-first matching
 
-## Beta capabilities
+Bitcase does not fill five cards with the same kind of Skill. It first maps the
+project to user-facing responsibilities, then chooses a source only when it
+covers an uncovered responsibility. For example, a Skill-library website is
+checked for source intake, Skill search/recommendation, persistence, interface,
+and quality work—not only UI.
 
-- Private, browser-local Skill library with import and export
-- Project-to-Skill matching without spending model tokens
-- GitHub Radar with maintenance, license, and repository-quality signals
-- skills.sh Trending, Hot, and All-time discovery
-- Exact Skill selection in repositories containing multiple `SKILL.md` files
-- Source inspection, content hashing, quarantine, and reinspection
-- Multilingual interface and Skill explanations in six languages
-- Project Stack JSON and Codex installation handshake
-- Per-Skill outcome feedback
-- Optional ChatGPT identity, D1 cloud library, and scoped Codex Bridge tokens
-- Installable PWA with offline shell
+If a responsibility has no traceable source, Bitcase shows it as a gap rather
+than quietly inserting an unrelated Skill. Already-read entries in the device's
+Skill Library are considered with the active snapshot.
 
-## Quick start
+Source files can be English or Japanese, but Bitcase presents the role, match
+reason, and capability summary in Chinese while preserving the original
+language label and exact `SKILL.md` text for review.
 
-### Requirements
+The site has no onboarding modal, account page, subscription, analytics dashboard, shared model key, or user API-key setting.
 
-- Node.js 22.13 or newer
-- npm
-- Linux or WSL for the included build scripts
+## Evidence states
 
-The Vite development server can run on macOS, but the verified build helpers
-use GNU `timeout` and `flock`.
+| State | Meaning |
+| --- | --- |
+| Catalog entry | A directory reference. Bitcase has not read its source content. |
+| Local import | A file selected by the user in the current browser. |
+| Source read | Bitcase read a real `SKILL.md` and recorded its hash and path. |
 
-### Run locally
+Static checks are risk signals, not a security certification. A source that needs review is shown as such.
+
+## Run locally
 
 ```bash
-git clone https://github.com/Tomchen070814/bitcase-community.git
-cd bitcase-community
-npm ci
+npm run install:ci
 npm run dev
 ```
 
-Open the local address printed by Vite. The development server uses a local D1
-database; no hosted account or production credential is required.
+Optional environment variable:
 
-Optional server-side variables:
-
-```bash
-cp .env.example .env.local
+```text
+BITCASE_INDEX_API_URL
 ```
 
-`GITHUB_RADAR_TOKEN` raises GitHub API limits but is not required for basic use.
-Never expose this token through a client-side variable.
+It points the site Worker to the independently deployed Bitcase index Worker.
+`GITHUB_SKILL_TOKEN` is optional and is used only for a visitor's explicit
+exact-source visualization request. Never place a user API key in Bitcase.
 
-### Kimi AI planning for Radar
+The independent index Worker, D1/R2 schema, Cron configuration, and production
+runbook are documented in [docs/INDEX_WORKER.md](docs/INDEX_WORKER.md).
 
-The hosted site can call Cloudflare Workers AI directly to let Kimi K2.6 plan
-Radar's focus, adjacent, and wildcard search lanes. Requests stay server-side
-and are protected by per-visitor and global daily limits. If AI is unavailable
-or quota is exhausted, Radar automatically keeps working with its deterministic
-local planner.
-
-For production, set `BITCASE_AI_PROVIDER=cloudflare`,
-`BITCASE_AI_MODEL=@cf/moonshotai/kimi-k2.6`, and the server-only Cloudflare
-account ID and API token shown in `.env.example`. FreeLLMAPI remains available
-as a local development adapter. See
-[Kimi and FreeLLMAPI for Radar](docs/FREELLMAPI.md).
-
-### Validate a change
+## Validate a change
 
 ```bash
 npm run lint
 npm test
 ```
 
-## Safety model
+## License
 
-Bitcase uses defense in depth:
-
-- exact URL and repository validation;
-- complete detection of nested `SKILL.md` files;
-- content hashes for change and duplicate detection;
-- explicit findings with file, line, and excerpt;
-- quarantine for incomplete or suspicious inspections;
-- no claim that a registry ranking equals safety;
-- a Codex-side handshake before “installed” is displayed.
-
-See [SECURITY.md](SECURITY.md) for the disclosure process and
-[the architecture notes](docs/ARCHITECTURE.md) for trust boundaries.
-
-## AgentChat bundle
-
-Bitcase includes four featured entries from
-[`Tomchen070814/AgentChat`](https://github.com/Tomchen070814/AgentChat).
-Each `SKILL.md` is selected and inspected separately, while the generated
-Stack manifest preserves AgentChat's repository-level runtime dependencies.
-See [AgentChat integration](docs/AGENTCHAT.md) for setup, environment, and
-security details.
-
-## Community and hosted service
-
-This repository contains the complete Beta core, including the generic D1
-account/library implementation. The official hosted Bitcase service may later
-add separate catalog synchronization, recommendation infrastructure, abuse
-controls, billing, team administration, and operational analytics.
-
-Those services are not required to run the community edition. The boundary is
-documented in [Community and Cloud](docs/COMMUNITY_CLOUD.md).
-
-## Project status
-
-`0.4.0-beta.1` is suitable for public testing, not security-critical
-production use. Current priorities:
-
-1. broader real-user testing;
-2. registry synchronization through supported APIs;
-3. stronger provenance and license verification;
-4. reproducible Skill installation;
-5. accessibility and mobile QA; and
-6. independent account providers for deployments outside OpenAI Sites.
-
-## Contributing
-
-Start with [CONTRIBUTING.md](CONTRIBUTING.md). Security reports should not be
-opened as public issues.
-
-## License and marks
-
-The source code is licensed under
-[GNU AGPL v3.0 only](LICENSE). Commercial arrangements may be available for
-copyright held by the project owner; see
-[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
-
-The AGPL license does not grant permission to imply endorsement by the Bitcase
-project or reuse its project marks in a confusing product. See
-[TRADEMARKS.md](TRADEMARKS.md).
+AGPL-3.0-only. See [LICENSE](LICENSE).
