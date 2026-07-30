@@ -1,0 +1,10 @@
+{
+  "name": "@bitcase/index-worker",
+  "version": "0.4.0-beta.11",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "wrangler deploy --dry-run --outdir ../.index-worker-dist",
+    "deploy": "wrangler deploy"
+  }
+}

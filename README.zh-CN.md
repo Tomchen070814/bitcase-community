@@ -1,104 +1,73 @@
 # Bitcase
 
-<p align="center">
-  <img src="public/showcase-cover.png" alt="Bitcase Skill 能力操作库" width="100%">
-</p>
+Bitcase 帮用户判断一个项目到底该使用哪些 Agent Skills。
 
-<p align="center">
-  用于发现、解读、检查、匹配并把 Agent Skills 交给 Codex 的开源能力操作库。
-</p>
+它只保留三个核心功能：
 
-<p align="center">
-  <a href="https://bitcase-skill-library.tomcjq070814.chatgpt.site">在线 Beta</a>
-  ·
-  <a href="README.md">English</a>
-  ·
-  <a href="ROADMAP.md">路线图</a>
-  ·
-  <a href="SECURITY.md">安全政策</a>
-</p>
+1. Skill 可视化：看到用途、来源和已有证据。
+2. 项目匹配：根据需求匹配本地与互联网来源的 Skills。
+3. 最小 Stack：组合职责不重复、理由清楚的最小 Skill Stack。
 
-> 这是 Beta 软件。Bitcase 能发现可疑指令和不完整扫描，但不能证明第三方
-> Skill 绝对安全。安装前仍应审查源码，并遵循最小权限原则。
+## 使用流程
 
-## Bitcase 解决什么问题
+在首页写下项目需求。Bitcase 会：
 
-Agent Skills 分散在 GitHub、登记网站和个人电脑里。收藏链接很容易，但用户
-通常仍不知道它具体能做什么、是否能用，以及某个项目究竟需要哪些 Skills。
+1. 把需求拆成不同项目职责；
+2. 查询当前已激活、可回滚的 Bitcase 索引快照；
+3. 将快照证据与浏览器 Skill 库中已保存的 Skills 一起匹配；
+4. 返回仓库、固定 Commit 的文件、内容 Hash、检查时间、License 与风险信号；
+5. 以项目职责覆盖为准，生成最小 Stack。
 
-Bitcase 把收藏过程改造成使用流程：
+skills.sh 和 GitHub 只由后台索引任务访问。用户搜索不会等待实时上游。
+索引 API 暂时不可用时，浏览器可以回退到相同查询最近七天内的成功结果，
+并明确提示数据可能不是最新。
 
-1. 从 GitHub 或 skills.sh 发现 Skill；
-2. 识别仓库内所有 `SKILL.md`；
-3. 解释用途、适用场景、限制、权限和风险；
-4. 使用内容哈希去重并检测变化；
-5. 为项目生成最小 Skill Stack；
-6. 生成可以交给 Codex 的可审计清单；
-7. 记录每个 Skill 最终是否有用、未使用、冲突或安装失败。
+## 覆盖优先的匹配
 
-## Beta 已有能力
+Bitcase 不会把五个同类 Skill 塞进结果。它会先识别项目需要覆盖的职责，再只选择能够补齐未覆盖职责的来源。
 
-- 浏览器本地私人 Skill 库及导入导出
-- 不消耗模型 Token 的项目匹配
-- 带维护、许可证和仓库质量信号的 GitHub Radar
-- skills.sh 趋势、热门和总榜发现
-- 精确识别多 `SKILL.md` 仓库中的单个 Skill
-- 源码检查、内容哈希、风险隔离和重新检查
-- 六种语言界面与 Skill 解读
-- 项目 Stack JSON 与 Codex 本机安装握手
-- 逐个 Skill 使用结果反馈
-- 可选 ChatGPT 身份、D1 云端库及 Codex Bridge Token
-- 可安装 PWA 和离线外壳
+例如“储存和管理 Skill 的网站”会检查：来源导入与 `SKILL.md` 解析、Skill 检索与推荐、元数据存储、界面可视化、质量验证等，而不是只找前端 Skill。若某项职责没有真实、可追溯的来源，结果会明确标成缺口，绝不会用不相关的 Skill 充数。
+
+用户保存过且已读取的本机 Skill 库会和活动快照一起参与匹配。来源可能是英文或日文，但 Bitcase 会用中文显示职责、匹配理由和能力概览，同时保留原文语言标识与精确 `SKILL.md` 供用户回查。
+
+网站没有强制向导、账号页、订阅、商业模块、分析面板、共享模型额度或用户 API Key 设置。
+
+## 来源状态
+
+| 状态 | 含义 |
+| --- | --- |
+| 目录条目 | 仅来自目录引用，Bitcase 尚未读取来源内容。 |
+| 本地导入 | 用户在当前浏览器中主动选择的文件。 |
+| 来源已读取 | Bitcase 已读取真实 `SKILL.md`，并记录哈希与路径。 |
+
+静态检查只提供风险信号，不是安全认证。需要人工判断的来源会被明确标记。
 
 ## 本地运行
 
-要求 Node.js 22.13 或更高版本。
-
 ```bash
-git clone https://github.com/Tomchen070814/bitcase-community.git
-cd bitcase-community
-npm ci
+npm run install:ci
 npm run dev
 ```
 
-打开 Vite 输出的本地地址。开发环境使用本地 D1 数据库，不需要生产账户或
-生产密钥。
+可选环境变量：
 
-需要提高 GitHub API 限额时：
-
-```bash
-cp .env.example .env.local
+```text
+BITCASE_INDEX_API_URL
 ```
 
-然后填写服务端 `GITHUB_RADAR_TOKEN`。不要把它改成客户端变量。
+它指向独立部署的 Bitcase 索引 Worker。`GITHUB_SKILL_TOKEN` 仅用于用户
+主动输入精确来源链接后的可视化读取。不要把用户 API Key 放进 Bitcase。
 
-验证修改：
+独立 Worker、D1/R2、Cron 和生产部署步骤见
+[docs/INDEX_WORKER.md](docs/INDEX_WORKER.md)。
+
+## 验证修改
 
 ```bash
 npm run lint
 npm test
 ```
 
-## 开源与官方云服务边界
+## 许可证
 
-本仓库公开完整 Beta 核心，也包括通用 D1 账户和库同步实现。未来官方
-Bitcase Cloud 可能增加全目录同步、个性化排序、反滥用、计费、团队管理及
-运营后台；这些能力不影响社区版本地运行。
-
-详细说明见 [社区版与云端边界](docs/COMMUNITY_CLOUD.md)。
-
-## 当前阶段
-
-`0.4.0-beta.1` 适合公开测试，不适合直接用于安全关键环境。下一阶段重点是：
-
-1. 获取真实用户数据；
-2. 使用受支持 API 完成登记库同步；
-3. 加强来源、许可证与维护状态验证；
-4. 形成可复现的 Skill 安装流程；
-5. 完成移动端与无障碍实测；
-6. 支持 OpenAI Sites 之外的独立账户提供商。
-
-贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题不要提交公开 Issue。
-
-代码使用 [GNU AGPL v3.0 only](LICENSE) 开源。Bitcase 名称和项目标识的使用
-边界见 [TRADEMARKS.md](TRADEMARKS.md)。
+AGPL-3.0-only，详见 [LICENSE](LICENSE)。

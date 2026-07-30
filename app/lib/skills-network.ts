@@ -2,6 +2,21 @@ import { inspectGithubSkill } from "./radar-inspection.ts";
 import type { RadarInspectionResult } from "./radar-inspection.ts";
 
 export type SkillsNetworkView = "all" | "trending" | "hot";
+export type SkillsNetworkOrigin =
+  | "skills.sh"
+  | "bitcase-featured"
+  | "github";
+
+export type SkillInstallation = {
+  mode: "repository-clone";
+  repositoryUrl: string;
+  ref: string;
+  copySingleSkillFolder: false;
+  requiredRepositoryPaths: string[];
+  setupCommands: string[];
+  optionalEnvironmentVariables: string[];
+  authentication: string[];
+};
 
 export type SkillsNetworkEntry = {
   id: string;
@@ -13,6 +28,8 @@ export type SkillsNetworkEntry = {
   installsLabel: string | null;
   rank: number | null;
   view: SkillsNetworkView;
+  origin: SkillsNetworkOrigin;
+  installation?: SkillInstallation;
 };
 
 export type SkillsNetworkResolved = {
@@ -90,6 +107,7 @@ const FALLBACK_ENTRIES: Array<
     url: "https://skills.sh/vercel-labs/skills/find-skills",
     installUrl: "https://github.com/vercel-labs/skills",
     installsLabel: null,
+    origin: "skills.sh",
   },
   {
     id: "anthropics/skills/frontend-design",
@@ -99,6 +117,7 @@ const FALLBACK_ENTRIES: Array<
     url: "https://skills.sh/anthropics/skills/frontend-design",
     installUrl: "https://github.com/anthropics/skills",
     installsLabel: null,
+    origin: "skills.sh",
   },
   {
     id: "vercel-labs/agent-skills/vercel-react-best-practices",
@@ -108,6 +127,7 @@ const FALLBACK_ENTRIES: Array<
     url: "https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices",
     installUrl: "https://github.com/vercel-labs/agent-skills",
     installsLabel: null,
+    origin: "skills.sh",
   },
   {
     id: "mattpocock/skills/tdd",
@@ -117,6 +137,7 @@ const FALLBACK_ENTRIES: Array<
     url: "https://skills.sh/mattpocock/skills/tdd",
     installUrl: "https://github.com/mattpocock/skills",
     installsLabel: null,
+    origin: "skills.sh",
   },
   {
     id: "vercel-labs/agent-skills/web-design-guidelines",
@@ -126,6 +147,7 @@ const FALLBACK_ENTRIES: Array<
     url: "https://skills.sh/vercel-labs/agent-skills/web-design-guidelines",
     installUrl: "https://github.com/vercel-labs/agent-skills",
     installsLabel: null,
+    origin: "skills.sh",
   },
   {
     id: "remotion-dev/skills/remotion-best-practices",
@@ -135,8 +157,35 @@ const FALLBACK_ENTRIES: Array<
     url: "https://skills.sh/remotion-dev/skills/remotion-best-practices",
     installUrl: "https://github.com/remotion-dev/skills",
     installsLabel: null,
+    origin: "skills.sh",
   },
 ];
+
+const AGENTCHAT_REPOSITORY = "Tomchen070814/AgentChat";
+const AGENTCHAT_BRANCH = "master";
+const AGENTCHAT_SKILLS = [
+  "AgentChat-OneWeb",
+  "AgentChat-WebSubAgent",
+  "AgentChat-IndependentTasks",
+  "mcp-server",
+] as const;
+
+const FEATURED_ENTRIES: Array<
+  Omit<SkillsNetworkEntry, "rank" | "view">
+> = AGENTCHAT_SKILLS.map((name) => {
+  const skillPath = `skills/${name}/SKILL.md`;
+  return {
+    id: `${AGENTCHAT_REPOSITORY}/${normalizeSlug(name)}`,
+    name,
+    source: `${AGENTCHAT_REPOSITORY} · Bitcase featured`,
+    slug: normalizeSlug(name),
+    url: `https://github.com/${AGENTCHAT_REPOSITORY}/blob/${AGENTCHAT_BRANCH}/${skillPath}`,
+    installUrl: `https://github.com/${AGENTCHAT_REPOSITORY}`,
+    installsLabel: null,
+    origin: "bitcase-featured",
+    installation: agentChatInstallation(skillPath),
+  };
+});
 
 export function validateSkillsNetworkView(
   value: string | null,
@@ -156,6 +205,7 @@ export function parseSkillsShSkillUrl(
   slug: string;
   url: string;
   installUrl: string;
+  origin: "skills.sh";
 } | null {
   let url: URL;
   try {
@@ -190,6 +240,79 @@ export function parseSkillsShSkillUrl(
     slug,
     url: `https://skills.sh/${source}/${slug}`,
     installUrl: `https://github.com/${source}`,
+    origin: "skills.sh",
+  };
+}
+
+export function parseGithubSkillFileUrl(
+  input: string,
+): {
+  id: string;
+  owner: string;
+  repository: string;
+  source: string;
+  slug: string;
+  url: string;
+  installUrl: string;
+  branch: string;
+  skillPath: string;
+  origin: "bitcase-featured" | "github";
+} | null {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.hostname.toLowerCase() !== "github.com") {
+    return null;
+  }
+  const segments = url.pathname
+    .split("/")
+    .map((segment) => decodeURIComponent(segment).trim())
+    .filter(Boolean);
+  if (
+    segments.length < 6 ||
+    segments[2] !== "blob" ||
+    segments.some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    return null;
+  }
+  const [owner, repository, , branch, ...pathSegments] = segments;
+  const skillPath = pathSegments.join("/");
+  if (
+    !/^[a-zA-Z0-9_.-]{1,100}$/.test(owner) ||
+    !/^[a-zA-Z0-9_.-]{1,100}$/.test(repository) ||
+    !/^[a-zA-Z0-9._-]{1,200}$/.test(branch) ||
+    pathSegments.at(-1)?.toLowerCase() !== "skill.md" ||
+    !pathSegments.every((segment) => /^[a-zA-Z0-9_. -]{1,160}$/.test(segment))
+  ) {
+    return null;
+  }
+  const source = `${owner}/${repository}`;
+  const parent = pathSegments.at(-2) || repository;
+  const slug = normalizeSlug(parent);
+  const canonicalUrl = `https://github.com/${source}/blob/${branch}/${pathSegments
+    .map(encodeURIComponent)
+    .join("/")}`;
+  return {
+    id: `${source}/${slug}`,
+    owner,
+    repository,
+    source,
+    slug,
+    url: canonicalUrl,
+    installUrl: `https://github.com/${source}`,
+    branch,
+    skillPath,
+    origin:
+      source === AGENTCHAT_REPOSITORY &&
+      branch === AGENTCHAT_BRANCH &&
+      AGENTCHAT_SKILLS.some(
+        (name) => skillPath === `skills/${name}/SKILL.md`,
+      )
+        ? "bitcase-featured"
+        : "github",
   };
 }
 
@@ -227,6 +350,7 @@ export function parseSkillsShFeedHtml(
       installsLabel: installs,
       rank,
       view,
+      origin: "skills.sh",
     });
     if (entries.size >= 24) break;
   }
@@ -252,17 +376,25 @@ export async function fetchSkillsNetworkFeed(
     if (!response.ok) throw new Error(`skills.sh ${response.status}`);
     const html = await response.text();
     const entries = parseSkillsShFeedHtml(html, view);
-    if (entries.length >= 3) return { entries, source: "live" };
+    if (entries.length >= 3) {
+      return {
+        entries: mergeFeaturedEntries(entries, view),
+        source: "live",
+      };
+    }
   } catch {
     // A transparent cached fallback keeps discovery usable without pretending
     // that an authenticated skills.sh API connection exists.
   }
   return {
-    entries: FALLBACK_ENTRIES.map((entry, index) => ({
-      ...entry,
-      rank: index + 1,
+    entries: mergeFeaturedEntries(
+      FALLBACK_ENTRIES.map((entry, index) => ({
+        ...entry,
+        rank: index + 1,
+        view,
+      })),
       view,
-    })),
+    ),
     source: "fallback",
   };
 }
@@ -272,7 +404,8 @@ export async function resolveSkillsNetworkSkill(
   locale: string,
   options: NetworkOptions = {},
 ): Promise<SkillsNetworkResolved> {
-  const parsed = parseSkillsShSkillUrl(input);
+  const parsed =
+    parseSkillsShSkillUrl(input) || parseGithubSkillFileUrl(input);
   if (!parsed) throw new SkillsNetworkError("invalid_skills_url", 400);
 
   const fetcher = options.fetcher || fetch;
@@ -319,7 +452,8 @@ export async function resolveSkillsNetworkSkill(
     license: { spdx_id?: string; name?: string } | null;
     topics?: string[];
   };
-  const defaultBranch = data.default_branch || "main";
+  const defaultBranch =
+    "branch" in parsed ? parsed.branch : data.default_branch || "main";
   const inspection = await inspectGithubSkill(
     {
       fullName: parsed.source,
@@ -329,9 +463,16 @@ export async function resolveSkillsNetworkSkill(
     {
       fetcher,
       githubToken: options.githubToken,
+      maxSkillFiles: 3,
+      pathHints: [parsed.slug],
     },
   );
-  const selected = selectSkillFile(inspection, parsed.slug);
+  const selected =
+    ("skillPath" in parsed
+      ? inspection.skillFiles.find(
+          (skill) => skill.path === parsed.skillPath,
+        )
+      : null) || selectSkillFile(inspection, parsed.slug);
   if (!selected) throw new SkillsNetworkError("skill_not_found", 404);
 
   return {
@@ -345,6 +486,11 @@ export async function resolveSkillsNetworkSkill(
       installsLabel: null,
       rank: null,
       view: "all",
+      origin: parsed.origin,
+      ...("skillPath" in parsed &&
+      parsed.origin === "bitcase-featured"
+        ? { installation: agentChatInstallation(parsed.skillPath) }
+        : {}),
     },
     repository: {
       id: data.id,
@@ -368,6 +514,64 @@ export async function resolveSkillsNetworkSkill(
     inspection,
     selectedSkillPath: selected.path,
   };
+}
+
+function agentChatInstallation(skillPath: string): SkillInstallation {
+  const requiredRepositoryPaths = [
+    skillPath,
+    "skills/lib",
+    "scripts",
+    ".env.example",
+    "package.json",
+    "package-lock.json",
+  ];
+  if (!skillPath.includes("/AgentChat-OneWeb/")) {
+    requiredRepositoryPaths.push("skills/AgentChat-OneWeb");
+  }
+  if (skillPath.includes("/mcp-server/")) {
+    requiredRepositoryPaths.push("skills/mcp-server/package.json");
+  }
+  return {
+    mode: "repository-clone",
+    repositoryUrl: `https://github.com/${AGENTCHAT_REPOSITORY}.git`,
+    ref: AGENTCHAT_BRANCH,
+    copySingleSkillFolder: false,
+    requiredRepositoryPaths,
+    setupCommands: [
+      "npm ci",
+      ...(skillPath.includes("/mcp-server/")
+        ? ["npm install --prefix skills/mcp-server"]
+        : []),
+    ],
+    optionalEnvironmentVariables: [
+      "CHROMIUM_PATH",
+      "CDP_HOST",
+      "CDP_PORT",
+      "CDP_URL",
+      "CHROME_PROFILE",
+      "PROXY_SERVER",
+      "GEMINI_URL",
+      "HEADLESS",
+    ],
+    authentication: [
+      "Use a dedicated Chrome debug profile.",
+      "Sign in interactively to at least one supported provider; do not place browser cookies in Bitcase.",
+    ],
+  };
+}
+
+function mergeFeaturedEntries(
+  entries: SkillsNetworkEntry[],
+  view: SkillsNetworkView,
+) {
+  const merged = new Map<string, SkillsNetworkEntry>();
+  FEATURED_ENTRIES.forEach((entry) => {
+    merged.set(entry.id, { ...entry, rank: null, view });
+  });
+  entries.forEach((entry) => {
+    if (!merged.has(entry.id)) merged.set(entry.id, entry);
+  });
+  return Array.from(merged.values()).slice(0, 24);
 }
 
 function selectSkillFile(

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "bitcase-index-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bitcase-index-prod",
+      "database_id": "00000000-0000-4000-8000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "SNAPSHOTS",
+      "bucket_name": "bitcase-index-snapshots-prod"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "0 */6 * * *",
+      "30 */12 * * *",
+      "15 2 * * *"
+    ]
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "[\"https://bitcase-skill-library.tomcjq070814.chatgpt.site\"]"
+  }
+}

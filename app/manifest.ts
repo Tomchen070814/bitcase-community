@@ -3,63 +3,27 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Bitcase · Skill Operating Library",
+    name: "Bitcase",
     short_name: "Bitcase",
-    description:
-      "Discover, inspect, match, and assemble a private library of Agent Skills.",
+    description: "将分散的 Skills 组成最小可执行 Stack。",
     start_url: "/",
     scope: "/",
     display: "standalone",
-    orientation: "any",
-    background_color: "#071520",
-    theme_color: "#c96345",
-    categories: ["productivity", "developer", "utilities"],
+    background_color: "#0b100f",
+    theme_color: "#c4d17b",
+    categories: ["productivity", "developer"],
     icons: [
-      {
-        src: "/app-icon-192.png",
-        sizes: "192x192",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/app-icon-512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/app-icon-512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "maskable",
-      },
+      { src: "/app-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
       {
-        name: "Skill Radar",
-        short_name: "Radar",
-        description: "Discover new Skills for your library",
-        url: "/?view=radar",
-        icons: [
-          {
-            src: "/app-icon-192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-        ],
-      },
-      {
-        name: "Project Match",
-        short_name: "Match",
-        description: "Match Skills to a project brief",
-        url: "/?view=composer",
-        icons: [
-          {
-            src: "/app-icon-192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-        ],
+        name: "项目匹配",
+        short_name: "匹配",
+        description: "为一个项目组合最小 Skill Stack",
+        url: "/",
+        icons: [{ src: "/app-icon-192.png", sizes: "192x192", type: "image/png" }],
       },
     ],
   };
