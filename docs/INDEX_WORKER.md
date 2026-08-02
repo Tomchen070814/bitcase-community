@@ -1,6 +1,7 @@
 # Bitcase index Worker deployment
 
-`0.4.0-beta.11` separates user search from upstream ingestion:
+`0.4.0-beta.12` keeps user search separated from upstream ingestion and adds
+evidence-scoped capability classification:
 
 ```mermaid
 flowchart TD
@@ -34,17 +35,37 @@ signed local scripts for the current user:
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
 
-Clone the beta.11 branch and validate it:
+Clone the beta.12 branch and validate it:
 
 ```powershell
 git clone https://github.com/Tomchen070814/bitcase-community.git
 cd bitcase-community
-git checkout agent/bitcase-beta11-snapshot-index
+git checkout agent/bitcase-beta12-evidence-ranker
 npm.cmd ci
 npm.cmd test
 ```
 
 Do not continue unless the site build, index Worker dry-run, and all tests pass.
+
+### Upgrading an existing beta.11 Worker
+
+No D1 migration or new R2 bucket is required. Deploy beta.12, then build one
+full snapshot. During the interval before that snapshot activates, search uses
+conservative compatibility reclassification instead of serving beta.11's
+over-broad capability claims.
+
+The first search response after the code deployment may temporarily report:
+
+```json
+{
+  "rankerVersion": "ranker-v6",
+  "snapshotRankerVersion": "ranker-v5",
+  "compatibilityReclassification": true
+}
+```
+
+After the full sync activates, both ranker versions must be `ranker-v6` and
+`compatibilityReclassification` must be `false`.
 
 ## 2. Authenticate Wrangler
 
@@ -111,6 +132,20 @@ The file also owns all three UTC Cron triggers:
 | `0 */6 * * *` | refresh skills.sh candidates every six hours |
 | `30 */12 * * *` | refresh GitHub candidates every twelve hours |
 | `15 2 * * *` | rebuild both sources daily |
+
+Each source invocation inspects at most four repositories and two `SKILL.md`
+files per repository. This keeps external calls below the Workers Free
+subrequest boundary while query families and result offsets rotate over time.
+See the current [Cloudflare Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
+
+Successfully parsed Skills that are not in the current discovery window remain
+eligible for eight days. The active beta catalog is capped at 250 Skills and
+prefers recently checked evidence. This means catalog growth happens over
+successful Cron runs; do not repeatedly trigger manual full syncs to force it.
+
+Manifest source entries expose the active query window, candidate count, and
+candidate offset under `discovery` for production diagnosis. The 95% parse gate
+is calculated from the fresh batch, not diluted by retained Skills.
 
 ## 6. Deploy and add Secrets
 
@@ -200,9 +235,10 @@ Invoke-RestMethod `
 ```
 
 The search response must contain `search.indexVersion`,
-`search.rankerVersion`, and at least one source-backed result for a supported
-query. Repeating the same query against the same version must return the same
-ordering.
+`search.rankerVersion`, `search.snapshotRankerVersion`, and at least one
+source-backed result for a supported query. For beta.12, both ranker versions
+must be `ranker-v6` and `search.compatibilityReclassification` must be `false`.
+Repeating the same query against the same version must return the same ordering.
 
 In R2, verify that both of these prefixes exist:
 
@@ -241,6 +277,8 @@ Confirm all of the following:
 
 - `/health` reports `bitcase-index-worker`.
 - `/api/index/status` reports an active version and both source states.
+- active snapshots grow across rotating Cron windows without exceeding 250
+  Skills or losing the previous active version on a rejected batch.
 - the same query, index version, and ranker version produce the same ordering.
 - site search logs contain no runtime skills.sh, GitHub Search, GitHub Tree, or
   raw GitHub request.

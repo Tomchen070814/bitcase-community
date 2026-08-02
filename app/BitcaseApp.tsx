@@ -53,6 +53,8 @@ type ComposeResult = {
     githubFallbackUsed: boolean;
     indexVersion?: string;
     rankerVersion?: string;
+    snapshotRankerVersion?: string;
+    compatibilityReclassification?: boolean;
     builtAt?: string;
   };
 };
@@ -383,8 +385,14 @@ export default function BitcaseApp() {
             <p className="search-path">
               搜索路径：Bitcase 活动快照
               {result.search?.indexVersion ? ` · ${result.search.indexVersion}` : ""}
+              {result.search?.rankerVersion ? ` · ${result.search.rankerVersion}` : ""}
               {result.search?.builtAt ? ` · 构建于 ${dateLabel(result.search.builtAt)}` : ""}
             </p>
+            {result.search?.compatibilityReclassification && (
+              <p className="snapshot-warning">
+                索引快照正在升级，当前结果已按新版证据规则进行保守重分类；后台快照激活后会自动切换。
+              </p>
+            )}
             {resultFreshness === "cached" && (
               <p className="snapshot-warning">
                 当前索引服务不可用，正在显示这台设备最近七天内的成功结果；数据可能不是最新。

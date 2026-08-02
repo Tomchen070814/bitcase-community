@@ -24,6 +24,11 @@ waits for either upstream service. If the index API is unavailable, the browser
 can reuse the same query's most recent successful result for seven days and
 clearly marks it as potentially stale.
 
+Background discovery rotates through bounded query and result windows. Recent
+source evidence is retained for eight days, so successive Cron runs expand the
+catalog without turning one invocation into an unbounded crawler. The beta
+snapshot is capped at 250 Skills.
+
 ## Coverage-first matching
 
 Bitcase does not fill five cards with the same kind of Skill. It first maps the
@@ -35,6 +40,11 @@ and quality work—not only UI.
 If a responsibility has no traceable source, Bitcase shows it as a gap rather
 than quietly inserting an unrelated Skill. Already-read entries in the device's
 Skill Library are considered with the active snapshot.
+
+Capability coverage is based on primary Skill evidence, not every word in a
+long document. Examples, code blocks, navigation links, and related-Skill lists
+remain searchable context but cannot by themselves claim a responsibility;
+explicit exclusions reduce the claim instead.
 
 Source files can be English or Japanese, but Bitcase presents the role, match
 reason, and capability summary in Chinese while preserving the original

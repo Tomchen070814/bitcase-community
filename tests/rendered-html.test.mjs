@@ -174,7 +174,7 @@ test("proxies compose only to the independent active-snapshot API", async () => 
         search: {
           strategy: "active-snapshot",
           indexVersion: "20260731-a91c",
-          rankerVersion: "ranker-v5",
+          rankerVersion: "ranker-v6",
           builtAt: "2026-07-31T00:00:00.000Z",
         },
       },

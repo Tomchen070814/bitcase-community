@@ -2,6 +2,37 @@
 
 All notable changes to Bitcase are documented here.
 
+## [0.4.0-beta.12] - 2026-08-01
+
+### Changed
+
+- Capability coverage now requires high-confidence evidence from Skill names,
+  frontmatter descriptions, primary headings, or explicit positive scope
+- Incidental references in examples, navigation, related-Skill lists, and code
+  blocks no longer let one Skill claim unrelated project responsibilities
+- Explicit `When NOT to Use`, exclusion, and limitation sections reduce false
+  capability claims
+- Generic `engineering` is now a fallback only when no specific capability is
+  supported
+- Search now reports `ranker-v6` and includes the running ranker version in its
+  cache key, so a ranker deployment cannot reuse stale responses from v5
+- A beta.11 active snapshot is conservatively reclassified while beta.12 builds
+  and activates its replacement, keeping search available during the upgrade
+- Source discovery now rotates through capability-specific queries and result
+  windows while keeping each invocation bounded to four repositories
+- Recently verified source Skills remain eligible for eight days, allowing the
+  active catalog to grow across Cron runs; the snapshot is capped at 250 Skills
+- The 95% parse gate now measures the fresh batch separately, so retained data
+  cannot hide a broken upstream parse
+
+### Tests
+
+- Added a regression based on the production `software-backend` Skill that
+  previously claimed all seven responsibilities for a Skill-library website
+- Added coverage for compatibility reclassification of beta.11 capability data
+- Added regression coverage for rotating discovery windows, eight-day
+  retention, and fresh-batch quality gates
+
 ## [0.4.0-beta.11] - 2026-07-31
 
 ### Added

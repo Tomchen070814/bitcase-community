@@ -4,10 +4,15 @@ import test from "node:test";
 import {
   RANKER_VERSION,
   cronReason,
+  discoverySelection,
   evaluateSnapshotQuality,
+  limitIndexedSkills,
   nextCircuitState,
   parseSkillMarkdown,
   rankSnapshot,
+  reconcileSnapshotCapabilities,
+  rotatingWindow,
+  shouldRetainSourceSkill,
 } from "../index-worker/src/index.ts";
 
 function indexedSkill(overrides = {}) {
@@ -58,6 +63,109 @@ Use this Skill for spreadsheet analysis and quality testing.`,
   assert.match(skill.skillUrl, new RegExp(`/blob/${"c".repeat(40)}/skills/csv/SKILL\\.md$`));
   assert.equal(skill.r2Key, `content/${skill.contentHash}.md`);
   assert.ok(skill.capabilityIds.includes("data"));
+});
+
+test("does not turn a backend Skill into an all-purpose Stack from incidental body references", async () => {
+  const skill = await parseSkillMarkdown({
+    source: "skills.sh",
+    sourceRef: "https://skills.sh/example/software-backend",
+    repository: "example/engineering-skills",
+    commitSha: "9".repeat(40),
+    defaultBranch: "main",
+    skillPath: "skills/software-backend/SKILL.md",
+    markdown: `---
+name: software-backend
+description: Production-grade backend APIs for Node.js, Python, Go, Rust, and C# with PostgreSQL. Use when building REST/GraphQL/tRPC services or auth.
+---
+
+# Software Backend Engineering
+
+Use this skill to design, implement, and review production-grade backend services: API boundaries, data layer, auth, caching, observability, error handling, testing, and deployment.
+
+## Quick Reference
+
+Frontend clients, security reviews, testing strategy, deployment, and Skill search may be discussed as integration context.
+
+## Scope
+
+- Design and implement REST/GraphQL/tRPC APIs
+- Model data schemas and run safe migrations
+- Add validation, caching, and background jobs
+- Ship production readiness and deploy runbooks
+
+## When NOT to Use This Skill
+
+- Frontend-only concerns
+- Infrastructure provisioning
+- API design patterns only with no implementation
+- Security audits and threat modeling
+- SQL query optimization and indexing
+
+## Related Skills
+
+Use dedicated frontend, security, testing, deployment, and Skill discovery Skills for those responsibilities.`,
+  });
+
+  assert.ok(skill);
+  assert.deepEqual(skill.capabilityIds, ["persistence", "backend"]);
+
+  const result = rankSnapshot("制作一个储存和推荐 Skills 的网站", [skill]);
+  assert.deepEqual(result.coverage.covered, ["数据模型与持久化", "应用后端与接口"]);
+  assert.ok(result.coverage.missing.includes("界面设计与前端实现"));
+  assert.ok(result.coverage.missing.includes("测试与质量验证"));
+  assert.deepEqual(result.skills[0].capabilities, ["数据模型与持久化", "应用后端与接口"]);
+});
+
+test("reclassifies a beta.11 snapshot before beta.12 serves it", () => {
+  assert.deepEqual(
+    reconcileSnapshotCapabilities(
+      "software-backend",
+      "Production-grade backend APIs with PostgreSQL for REST services.",
+      [
+        "skill-intake",
+        "skill-discovery",
+        "persistence",
+        "frontend",
+        "backend",
+        "security",
+        "testing",
+      ],
+    ),
+    ["persistence", "backend"],
+  );
+});
+
+test("does not treat code samples or related-Skill links as capability evidence", async () => {
+  const skill = await parseSkillMarkdown({
+    source: "github",
+    sourceRef: "https://github.com/example/focused-helper",
+    repository: "example/focused-helper",
+    commitSha: "8".repeat(40),
+    defaultBranch: "main",
+    skillPath: "SKILL.md",
+    markdown: `---
+name: focused-helper
+description: Perform a narrowly defined task.
+---
+
+# Focused Helper
+
+## Scope
+
+\`\`\`typescript
+const frontend = "React website UI";
+const checks = "security audit testing deployment";
+\`\`\`
+
+## Related Skills
+
+- frontend-design
+- security-audit
+- testing-strategy`,
+  });
+
+  assert.ok(skill);
+  assert.deepEqual(skill.capabilityIds, ["engineering"]);
 });
 
 test("flags direct instruction overrides for review", async () => {
@@ -114,6 +222,21 @@ test("rejects a snapshot whose parse rate drops below 95 percent", () => {
   assert.ok(quality.errors.includes("parse_rate_below_95_percent"));
 });
 
+test("does not let retained Skills hide a failed fresh parse batch", () => {
+  const quality = evaluateSnapshotQuality({
+    previousCount: 100,
+    skillCount: 109,
+    discoveredCount: 110,
+    parsedCount: 109,
+    freshDiscoveredCount: 10,
+    freshParsedCount: 9,
+    missingR2Objects: 0,
+  });
+  assert.equal(quality.parseRate, 0.9);
+  assert.equal(quality.accepted, false);
+  assert.ok(quality.errors.includes("parse_rate_below_95_percent"));
+});
+
 test("rejects activation when a complete SKILL.md object is missing from R2", () => {
   const quality = evaluateSnapshotQuality({
     previousCount: 10,
@@ -148,6 +271,70 @@ test("maps all three Cloudflare Cron triggers to their sync jobs", () => {
   assert.equal(cronReason("* * * * *"), null);
 });
 
+test("rotates bounded discovery windows without increasing per-run work", () => {
+  const queries = ["backend", "frontend", "data", "testing", "security", "delivery"];
+  assert.deepEqual(rotatingWindow(queries, 2, 0), ["backend", "frontend"]);
+  assert.deepEqual(rotatingWindow(queries, 2, 2), ["data", "testing"]);
+  assert.deepEqual(rotatingWindow(queries, 2, 6), ["backend", "frontend"]);
+  assert.deepEqual(rotatingWindow(queries, 20, 4), [
+    "security",
+    "delivery",
+    "backend",
+    "frontend",
+    "data",
+    "testing",
+  ]);
+});
+
+test("advances the candidate offset only after every query family has run", () => {
+  const queries = ["backend", "frontend", "data", "testing", "security", "delivery"];
+  assert.deepEqual(discoverySelection(queries, 2, 1_000, 0), {
+    queries: ["backend", "frontend"],
+    candidateOffset: 0,
+  });
+  assert.deepEqual(discoverySelection(queries, 2, 1_000, 1_000), {
+    queries: ["data", "testing"],
+    candidateOffset: 0,
+  });
+  assert.deepEqual(discoverySelection(queries, 2, 1_000, 3_000), {
+    queries: ["backend", "frontend"],
+    candidateOffset: 4,
+  });
+});
+
+test("retains unseen source Skills for eight days and then allows pruning", () => {
+  const now = Date.parse("2026-08-10T00:00:00.000Z");
+  assert.equal(shouldRetainSourceSkill("2026-08-02T00:00:00.000Z", now), true);
+  assert.equal(shouldRetainSourceSkill("2026-08-01T23:59:59.999Z", now), false);
+  assert.equal(shouldRetainSourceSkill("2026-08-10T00:00:00.001Z", now), false);
+  assert.equal(shouldRetainSourceSkill("invalid", now), false);
+});
+
+test("caps a grown snapshot without letting one source crowd out the other", () => {
+  const skills = [
+    ...Array.from({ length: 200 }, (_, index) =>
+      indexedSkill({
+        id: `skills-sh/${index}:SKILL.md`,
+        source: "skills.sh",
+        repository: `skills-sh/${index}`,
+        checkedAt: "2026-08-01T00:00:00.000Z",
+      }),
+    ),
+    ...Array.from({ length: 200 }, (_, index) =>
+      indexedSkill({
+        id: `github/${index}:SKILL.md`,
+        source: "github",
+        repository: `github/${index}`,
+        checkedAt: "2026-08-01T00:00:00.000Z",
+      }),
+    ),
+  ];
+  const limited = limitIndexedSkills(skills);
+  assert.equal(limited.length, 250);
+  assert.equal(limited.filter((skill) => skill.source === "skills.sh").length, 125);
+  assert.equal(limited.filter((skill) => skill.source === "github").length, 125);
+});
+
 test("returns deterministic results for the same query, snapshot and ranker", () => {
   const snapshot = [
     indexedSkill(),
@@ -164,7 +351,7 @@ test("returns deterministic results for the same query, snapshot and ranker", ()
   const query = "分析 CSV 数据并校验计算，最后生成图表";
   const first = rankSnapshot(query, snapshot);
   const second = rankSnapshot(query, snapshot);
-  assert.equal(RANKER_VERSION, "ranker-v5");
+  assert.equal(RANKER_VERSION, "ranker-v6");
   assert.deepEqual(first, second);
   assert.equal(first.skills[0].name, "csv-analysis");
   assert.equal(first.skills.some((skill) => skill.name === "deployment"), false);

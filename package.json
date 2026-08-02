@@ -1,6 +1,6 @@
 {
   "name": "bitcase-skill-library",
-  "version": "0.4.0-beta.11",
+  "version": "0.4.0-beta.12",
   "private": true,
   "description": "Visualize real Agent Skills, match them to a project, and assemble a minimal Skill Stack.",
   "license": "AGPL-3.0-only",

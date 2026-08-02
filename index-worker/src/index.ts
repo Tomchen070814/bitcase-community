@@ -1,7 +1,16 @@
-const RANKER_VERSION = "ranker-v5";
+const RANKER_VERSION = "ranker-v6";
 const SEARCH_CACHE_SECONDS = 300;
 const CIRCUIT_OPEN_MS = 60 * 60 * 1000;
 const MAX_SKILLS_PER_REPOSITORY = 2;
+const MAX_REPOSITORIES_PER_SOURCE_SYNC = 4;
+const MAX_INDEXED_SKILLS = 250;
+const SOURCE_RETENTION_MS = 8 * 24 * 60 * 60 * 1000;
+const SKILLS_SH_QUERIES_PER_SYNC = 4;
+const GITHUB_QUERIES_PER_SYNC = 2;
+const SKILLS_SH_ROTATION_MS = 6 * 60 * 60 * 1000;
+const GITHUB_ROTATION_MS = 12 * 60 * 60 * 1000;
+const CAPABILITY_EVIDENCE_THRESHOLD = 5;
+const CAPABILITY_EXCLUSION_PENALTY = 8;
 
 type SourceName = "skills.sh" | "github";
 type SyncReason = SourceName | "full";
@@ -115,6 +124,11 @@ type SourceAttempt = {
   discovered: number;
   skills: IndexedSkill[];
   error?: string;
+  discovery?: {
+    queries: string[];
+    candidateCount: number;
+    candidateOffset: number;
+  };
 };
 
 const CAPABILITIES: Capability[] = [
@@ -230,11 +244,29 @@ const SKILLS_SH_QUERIES = [
   "data analysis",
   "web application",
   "workflow automation",
+  "backend api database",
+  "frontend react design",
+  "testing quality assurance",
+  "security audit validation",
+  "deployment devops ci cd",
+  "documentation report writing",
+  "image visual production",
+  "email calendar communication",
+  "spreadsheet csv analysis",
+  "instrument scpi data acquisition",
+  "agent skill search discovery",
+  "database storage migration",
 ];
 
 const GITHUB_REPOSITORY_QUERIES = [
   '"SKILL.md" agent skills',
   "codex skills automation",
+  "agent skills backend api",
+  "agent skills frontend design",
+  "agent skills data analysis",
+  "agent skills security testing",
+  "agent skills devops deployment",
+  "agent skills documentation",
 ];
 
 function json(data: unknown, init: ResponseInit = {}) {
@@ -279,9 +311,12 @@ function extractFrontmatter(markdown: string) {
     return match?.[1].trim().replace(/^["']|["']$/g, "") || "";
   };
   const firstHeading = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() || "";
+  const introduction = markdown
+    .replace(/^---\s*\n[\s\S]*?\n---/, "")
+    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, " ")
+    .split(/^##\s+/m, 1)[0];
   const firstParagraph =
-    markdown
-      .replace(/^---\s*\n[\s\S]*?\n---/, "")
+    introduction
       .replace(/^#+\s+.*$/gm, "")
       .split(/\n\s*\n/)
       .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
@@ -289,7 +324,84 @@ function extractFrontmatter(markdown: string) {
   return {
     name: value("name") || firstHeading,
     description: value("description") || firstParagraph.slice(0, 600),
+    firstHeading,
+    firstParagraph,
   };
+}
+
+type MarkdownSection = {
+  heading: string;
+  body: string;
+};
+
+function markdownSections(markdown: string): MarkdownSection[] {
+  const withoutFrontmatter = markdown.replace(/^---\s*\n[\s\S]*?\n---/, "");
+  const withoutCode = withoutFrontmatter.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, " ");
+  const headings = Array.from(withoutCode.matchAll(/^#{1,6}\s+(.+)$/gm));
+  return headings.map((heading, index) => ({
+    heading: heading[1].replace(/[*_`]/g, "").trim(),
+    body: withoutCode.slice(
+      (heading.index || 0) + heading[0].length,
+      headings[index + 1]?.index ?? withoutCode.length,
+    ),
+  }));
+}
+
+function inlineExclusions(value: string) {
+  return value
+    .split(/[.!?。！？；;\n]+/)
+    .filter((sentence) =>
+      /\b(?:not|never|avoid|exclude|instead of|do not|don't|isn't|aren't)\b|不适用|不要|不可|避免|排除|而非/i.test(
+        sentence,
+      ),
+    )
+    .join("\n");
+}
+
+function capabilityIdsFor(input: {
+  name: string;
+  description: string;
+  markdown?: string;
+  declaredCapabilities?: string[];
+}) {
+  const markdown = input.markdown || "";
+  const metadata = extractFrontmatter(markdown);
+  const sections = markdownSections(markdown);
+  const positiveScope = sections
+    .filter(({ heading }) =>
+      /^(?:scope|when to use|use cases?|what (?:this )?skill does|capabilities|适用范围|使用场景|用途|能力)$/i.test(
+        heading,
+      ),
+    )
+    .map(({ body }) => body)
+    .join("\n");
+  const exclusions = [
+    inlineExclusions(input.description),
+    inlineExclusions(positiveScope),
+    ...sections
+      .filter(({ heading }) =>
+        /(?:when not to use|do not use|don't use|not for|out of scope|exclusions?|limitations?|不适用|不要使用|排除|范围外)/i.test(
+          heading,
+        ),
+      )
+      .map(({ body }) => body),
+  ].join("\n");
+  const declaredCapabilities = (input.declaredCapabilities || []).join("\n");
+
+  const matched = CAPABILITIES.filter((capability) => {
+    let score = 0;
+    if (capability.patterns.test(input.name)) score += 7;
+    if (capability.patterns.test(input.description)) score += 5;
+    if (capability.patterns.test(metadata.firstHeading)) score += 3;
+    if (capability.patterns.test(metadata.firstParagraph)) score += 1;
+    if (capability.patterns.test(positiveScope)) score += 2;
+    if (capability.patterns.test(declaredCapabilities)) score += 2;
+    if (capability.patterns.test(exclusions)) score -= CAPABILITY_EXCLUSION_PENALTY;
+    return score >= CAPABILITY_EVIDENCE_THRESHOLD;
+  }).map((capability) => capability.id);
+
+  const specific = matched.filter((capabilityId) => capabilityId !== "engineering");
+  return specific.length ? specific : matched.length ? matched : ["engineering"];
 }
 
 async function sha256(value: string) {
@@ -309,13 +421,6 @@ function detectRisk(markdown: string): RiskLevel {
     : "clear";
 }
 
-function capabilityIdsFor(value: string) {
-  const matched = CAPABILITIES.filter((capability) => capability.patterns.test(value)).map(
-    (capability) => capability.id,
-  );
-  return matched.length ? matched : ["engineering"];
-}
-
 export async function parseSkillMarkdown(input: {
   source: SourceName;
   sourceRef: string;
@@ -333,7 +438,11 @@ export async function parseSkillMarkdown(input: {
   const contentHash = await sha256(input.markdown);
   const sourceUrl = `https://github.com/${input.repository}`;
   const skillUrl = `${sourceUrl}/blob/${encodeURIComponent(input.commitSha)}/${encodePath(input.skillPath)}`;
-  const capabilityIds = capabilityIdsFor(`${name}\n${description}\n${input.markdown.slice(0, 60_000)}`);
+  const capabilityIds = capabilityIdsFor({
+    name,
+    description,
+    markdown: input.markdown.slice(0, 80_000),
+  });
   return {
     id: `${input.repository}:${input.skillPath}`,
     source: input.source,
@@ -405,6 +514,40 @@ async function mapLimit<T, R>(
   return results;
 }
 
+export function rotatingWindow<T>(values: T[], count: number, start: number) {
+  if (!values.length || count <= 0) return [];
+  const size = Math.min(Math.floor(count), values.length);
+  const normalizedStart = ((Math.floor(start) % values.length) + values.length) % values.length;
+  return Array.from({ length: size }, (_, index) => values[(normalizedStart + index) % values.length]);
+}
+
+export function discoverySelection(
+  queries: string[],
+  queriesPerSync: number,
+  rotationMs: number,
+  now = Date.now(),
+) {
+  if (!queries.length || queriesPerSync <= 0 || rotationMs <= 0) {
+    return { queries: [], candidateOffset: 0 };
+  }
+  const rotation = Math.floor(now / rotationMs);
+  const queryBatchCount = Math.ceil(queries.length / queriesPerSync);
+  return {
+    queries: rotatingWindow(queries, queriesPerSync, rotation * queriesPerSync),
+    candidateOffset:
+      Math.floor(rotation / queryBatchCount) * MAX_REPOSITORIES_PER_SOURCE_SYNC,
+  };
+}
+
+export function shouldRetainSourceSkill(checkedAt: string, now = Date.now()) {
+  const checkedAtMs = Date.parse(checkedAt);
+  return (
+    Number.isFinite(checkedAtMs) &&
+    checkedAtMs <= now &&
+    now - checkedAtMs <= SOURCE_RETENTION_MS
+  );
+}
+
 type RepositoryCandidate = {
   fullName: string;
   defaultBranch: string;
@@ -441,10 +584,10 @@ async function inspectRepository(
     .map((entry) => entry.path!)
     .sort();
   const matchedPaths = allPaths.filter((path) => {
-      if (!candidate.skillSlug || source === "github") return true;
-      const normalizedPath = path.toLowerCase().replace(/[_\s]+/g, "-");
-      return normalizedPath.includes(candidate.skillSlug!.toLowerCase().replace(/[_\s]+/g, "-"));
-    });
+    if (!candidate.skillSlug || source === "github") return true;
+    const normalizedPath = path.toLowerCase().replace(/[_\s]+/g, "-");
+    return normalizedPath.includes(candidate.skillSlug!.toLowerCase().replace(/[_\s]+/g, "-"));
+  });
   const paths = (matchedPaths.length ? matchedPaths : allPaths.length === 1 ? allPaths : [])
     .slice(0, MAX_SKILLS_PER_REPOSITORY);
   const parsed = await mapLimit(paths, 3, async (skillPath) => {
@@ -470,9 +613,15 @@ async function inspectRepository(
   };
 }
 
-async function syncSkillsSh(env: Env): Promise<SourceAttempt> {
+async function syncSkillsSh(env: Env, now = Date.now()): Promise<SourceAttempt> {
+  const discovery = discoverySelection(
+    SKILLS_SH_QUERIES,
+    SKILLS_SH_QUERIES_PER_SYNC,
+    SKILLS_SH_ROTATION_MS,
+    now,
+  );
   const catalogs = await Promise.all(
-    SKILLS_SH_QUERIES.map(async (query) => {
+    discovery.queries.map(async (query) => {
       const endpoint = new URL("https://skills.sh/api/search");
       endpoint.searchParams.set("q", query);
       endpoint.searchParams.set("limit", "30");
@@ -504,7 +653,11 @@ async function syncSkillsSh(env: Env): Promise<SourceAttempt> {
       skillSlug,
     });
   }
-  const selected = Array.from(candidates.values()).slice(0, 4);
+  const selected = rotatingWindow(
+    Array.from(candidates.values()),
+    MAX_REPOSITORIES_PER_SOURCE_SYNC,
+    discovery.candidateOffset,
+  );
   const resolved = await mapLimit(selected, 3, async (candidate) => {
     try {
       const metadata = await fetchJson<{
@@ -527,12 +680,29 @@ async function syncSkillsSh(env: Env): Promise<SourceAttempt> {
   const discovered = resolved.reduce((total, result) => total + result.discovered, 0);
   const skills = resolved.flatMap((result) => result.skills);
   if (!discovered || !skills.length) throw new Error("skills_sh_returned_no_parseable_skills");
-  return { source: "skills.sh", attempted: true, succeeded: true, discovered, skills };
+  return {
+    source: "skills.sh",
+    attempted: true,
+    succeeded: true,
+    discovered,
+    skills,
+    discovery: {
+      queries: discovery.queries,
+      candidateCount: candidates.size,
+      candidateOffset: discovery.candidateOffset,
+    },
+  };
 }
 
-async function syncGithub(env: Env): Promise<SourceAttempt> {
+async function syncGithub(env: Env, now = Date.now()): Promise<SourceAttempt> {
+  const discovery = discoverySelection(
+    GITHUB_REPOSITORY_QUERIES,
+    GITHUB_QUERIES_PER_SYNC,
+    GITHUB_ROTATION_MS,
+    now,
+  );
   const searches = await Promise.all(
-    GITHUB_REPOSITORY_QUERIES.map(async (query) => {
+    discovery.queries.map(async (query) => {
       const endpoint = new URL("https://api.github.com/search/repositories");
       endpoint.searchParams.set("q", query);
       endpoint.searchParams.set("per_page", "20");
@@ -566,7 +736,12 @@ async function syncGithub(env: Env): Promise<SourceAttempt> {
       installs: null,
     });
   }
-  const resolved = await mapLimit(Array.from(candidates.values()).slice(0, 4), 3, async (candidate) => {
+  const selected = rotatingWindow(
+    Array.from(candidates.values()),
+    MAX_REPOSITORIES_PER_SOURCE_SYNC,
+    discovery.candidateOffset,
+  );
+  const resolved = await mapLimit(selected, 3, async (candidate) => {
     try {
       return await inspectRepository(env, candidate, "github");
     } catch {
@@ -576,16 +751,42 @@ async function syncGithub(env: Env): Promise<SourceAttempt> {
   const discovered = resolved.reduce((total, result) => total + result.discovered, 0);
   const skills = resolved.flatMap((result) => result.skills);
   if (!discovered || !skills.length) throw new Error("github_returned_no_parseable_skills");
-  return { source: "github", attempted: true, succeeded: true, discovered, skills };
+  return {
+    source: "github",
+    attempted: true,
+    succeeded: true,
+    discovered,
+    skills,
+    discovery: {
+      queries: discovery.queries,
+      candidateCount: candidates.size,
+      candidateOffset: discovery.candidateOffset,
+    },
+  };
 }
 
-function snapshotRowToSkill(row: SnapshotRow): IndexedSkill {
+export function reconcileSnapshotCapabilities(
+  name: string,
+  description: string,
+  storedCapabilityIds: string[],
+) {
+  const primaryCapabilityIds = capabilityIdsFor({ name, description });
+  const confirmedCapabilityIds = storedCapabilityIds.filter((capabilityId) =>
+    primaryCapabilityIds.includes(capabilityId),
+  );
+  return confirmedCapabilityIds.length ? confirmedCapabilityIds : primaryCapabilityIds;
+}
+
+function snapshotRowToSkill(row: SnapshotRow, reclassifyCapabilities = false): IndexedSkill {
   let capabilityIds: string[] = [];
   try {
     const parsed = JSON.parse(row.capabilities_json);
     if (Array.isArray(parsed)) capabilityIds = parsed.filter((value): value is string => typeof value === "string");
   } catch {
     capabilityIds = [];
+  }
+  if (reclassifyCapabilities) {
+    capabilityIds = reconcileSnapshotCapabilities(row.name, row.description, capabilityIds);
   }
   return {
     id: row.skill_id,
@@ -620,7 +821,7 @@ async function activeVersion(env: Env) {
   ).first<ActiveVersion>();
 }
 
-async function snapshotSkills(env: Env, versionId: string) {
+async function snapshotSkills(env: Env, versionId: string, reclassifyCapabilities = false) {
   const result = await env.DB.prepare(
     `SELECT skill_id, source, source_ref, repository, commit_sha, default_branch,
             skill_path, name, description, search_text, capabilities_json,
@@ -632,7 +833,7 @@ async function snapshotSkills(env: Env, versionId: string) {
   )
     .bind(versionId)
     .all<SnapshotRow>();
-  return (result.results || []).map(snapshotRowToSkill);
+  return (result.results || []).map((row) => snapshotRowToSkill(row, reclassifyCapabilities));
 }
 
 export function nextCircuitState(
@@ -737,12 +938,44 @@ function deduplicateSkills(skills: IndexedSkill[]) {
   return Array.from(unique.values()).sort((first, second) => first.id.localeCompare(second.id));
 }
 
+export function limitIndexedSkills(skills: IndexedSkill[]) {
+  if (skills.length <= MAX_INDEXED_SKILLS) return skills;
+  const ordered = [...skills].sort((first, second) => {
+      const checkedAtDifference = Date.parse(second.checkedAt) - Date.parse(first.checkedAt);
+      return (
+        checkedAtDifference ||
+        (second.installs || 0) - (first.installs || 0) ||
+        first.id.localeCompare(second.id)
+      );
+    });
+  const groups: Record<SourceName, IndexedSkill[]> = {
+    "skills.sh": ordered.filter((skill) => skill.source === "skills.sh"),
+    github: ordered.filter((skill) => skill.source === "github"),
+  };
+  const cursors: Record<SourceName, number> = { "skills.sh": 0, github: 0 };
+  const selected: IndexedSkill[] = [];
+  while (selected.length < MAX_INDEXED_SKILLS) {
+    let added = false;
+    for (const source of ["skills.sh", "github"] as const) {
+      const skill = groups[source][cursors[source]];
+      if (!skill || selected.length >= MAX_INDEXED_SKILLS) continue;
+      selected.push(skill);
+      cursors[source] += 1;
+      added = true;
+    }
+    if (!added) break;
+  }
+  return selected.sort((first, second) => first.id.localeCompare(second.id));
+}
+
 export function evaluateSnapshotQuality(input: {
   previousCount: number;
   skillCount: number;
   discoveredCount: number;
   parsedCount: number;
   missingR2Objects: number;
+  freshDiscoveredCount?: number;
+  freshParsedCount?: number;
 }) {
   const errors: string[] = [];
   if (input.skillCount < 1) errors.push("empty_snapshot");
@@ -752,7 +985,9 @@ export function evaluateSnapshotQuality(input: {
   ) {
     errors.push("skill_count_below_90_percent");
   }
-  const parseRate = input.discoveredCount > 0 ? input.parsedCount / input.discoveredCount : 0;
+  const parseDiscoveredCount = input.freshDiscoveredCount ?? input.discoveredCount;
+  const parseParsedCount = input.freshParsedCount ?? input.parsedCount;
+  const parseRate = parseDiscoveredCount > 0 ? parseParsedCount / parseDiscoveredCount : 0;
   if (parseRate < 0.95) errors.push("parse_rate_below_95_percent");
   if (input.missingR2Objects > 0) errors.push("r2_original_missing");
   return { accepted: errors.length === 0, errors, parseRate };
@@ -921,7 +1156,13 @@ export async function runSync(env: Env, reason: SyncReason) {
   const startedAt = nowIso();
   const runId = crypto.randomUUID();
   const active = await activeVersion(env);
-  const previousSkills = active ? await snapshotSkills(env, active.version_id) : [];
+  const previousSkills = active
+    ? await snapshotSkills(
+        env,
+        active.version_id,
+        active.ranker_version !== RANKER_VERSION,
+      )
+    : [];
   const sources: SourceName[] = reason === "full" ? ["skills.sh", "github"] : [reason];
   const attempts = await Promise.all(sources.map((source) => attemptSource(env, source)));
   const succeeded = attempts.filter((attempt) => attempt.succeeded);
@@ -948,16 +1189,24 @@ export async function runSync(env: Env, reason: SyncReason) {
   }
 
   const succeededSources = new Set(succeeded.map((attempt) => attempt.source));
-  const preserved = previousSkills.filter((skill) => !succeededSources.has(skill.source));
-  const skills = deduplicateSkills([
-    ...preserved,
-    ...succeeded.flatMap((attempt) => attempt.skills),
-  ]);
-  const preservedDiscovered = preserved.length;
+  const refreshed = succeeded.flatMap((attempt) => attempt.skills);
+  const refreshedIds = new Set(refreshed.map((skill) => skill.id));
+  const retentionNow = Date.now();
+  const retained = previousSkills.filter(
+    (skill) =>
+      !succeededSources.has(skill.source) ||
+      (!refreshedIds.has(skill.id) && shouldRetainSourceSkill(skill.checkedAt, retentionNow)),
+  );
+  const skills = limitIndexedSkills(deduplicateSkills([...retained, ...refreshed]));
+  const retainedDiscovered = retained.length;
+  const freshDiscoveredCount = succeeded.reduce(
+    (total, attempt) => total + attempt.discovered,
+    0,
+  );
+  const freshParsedCount = refreshed.length;
   const discoveredCount =
-    preservedDiscovered + succeeded.reduce((total, attempt) => total + attempt.discovered, 0);
-  const parsedCount =
-    preservedDiscovered + succeeded.reduce((total, attempt) => total + attempt.skills.length, 0);
+    retainedDiscovered + freshDiscoveredCount;
+  const parsedCount = retainedDiscovered + freshParsedCount;
   const versionId = await versionIdFor(reason);
   const builtAt = nowIso();
   const manifestKey = `versions/${versionId}/manifest.json`;
@@ -970,6 +1219,8 @@ export async function runSync(env: Env, reason: SyncReason) {
     discoveredCount,
     parsedCount,
     missingR2Objects,
+    freshDiscoveredCount,
+    freshParsedCount,
   });
 
   if (!quality.accepted) {
@@ -1010,6 +1261,7 @@ export async function runSync(env: Env, reason: SyncReason) {
       succeeded: attempt.succeeded,
       discovered: attempt.discovered,
       error: attempt.error || null,
+      discovery: attempt.discovery || null,
     })),
     quality,
     skills: skills.map((skill) => ({
@@ -1109,9 +1361,11 @@ function stableLibrarySkills(value: unknown): IndexedSkill[] {
     const capabilities = Array.isArray(skill.capabilities)
       ? skill.capabilities.filter((capability): capability is string => typeof capability === "string")
       : [];
-    const capabilityIds = CAPABILITIES.filter((definition) =>
-      capabilities.some((capability) => definition.patterns.test(capability)),
-    ).map((definition) => definition.id);
+    const capabilityIds = capabilityIdsFor({
+      name: String(skill.name),
+      description: String(skill.originalDescription),
+      declaredCapabilities: capabilities,
+    });
     return [
       {
         id: String(skill.id),
@@ -1126,7 +1380,7 @@ function stableLibrarySkills(value: unknown): IndexedSkill[] {
         searchText: normalizeQuery(
           `${skill.name}\n${skill.description}\n${skill.originalDescription}\n${capabilities.join("\n")}`,
         ),
-        capabilityIds: capabilityIds.length ? capabilityIds : ["engineering"],
+        capabilityIds,
         sourceLanguage: ["zh", "en", "ja", "mixed"].includes(String(skill.sourceLanguage))
           ? (skill.sourceLanguage as SourceLanguage)
           : languageOf(String(skill.originalDescription)),
@@ -1305,7 +1559,7 @@ async function handleSearch(request: Request, env: Env) {
   const libraryFingerprint = await sha256(
     JSON.stringify(library.map((skill) => [skill.id, skill.contentHash]).sort()),
   );
-  const cacheKeyHash = await sha256(`${active.version_id}\n${active.ranker_version}\n${normalizeQuery(query)}\n${libraryFingerprint}`);
+  const cacheKeyHash = await sha256(`${active.version_id}\n${RANKER_VERSION}\n${normalizeQuery(query)}\n${libraryFingerprint}`);
   const cacheRequest = new Request(`https://cache.bitcase.internal/search/${cacheKeyHash}`, {
     method: "GET",
   });
@@ -1317,7 +1571,8 @@ async function handleSearch(request: Request, env: Env) {
     headers.set("x-bitcase-cache", "hit");
     return new Response(cached.body, { status: cached.status, headers });
   }
-  const skills = await snapshotSkills(env, active.version_id);
+  const compatibilityReclassification = active.ranker_version !== RANKER_VERSION;
+  const skills = await snapshotSkills(env, active.version_id, compatibilityReclassification);
   const result = rankSnapshot(query, skills, library);
   const response = json(
     {
@@ -1327,7 +1582,9 @@ async function handleSearch(request: Request, env: Env) {
         catalogCandidates: skills.length,
         githubFallbackUsed: false,
         indexVersion: active.version_id,
-        rankerVersion: active.ranker_version,
+        rankerVersion: RANKER_VERSION,
+        snapshotRankerVersion: active.ranker_version,
+        compatibilityReclassification,
         builtAt: active.built_at,
       },
     },
@@ -1335,6 +1592,7 @@ async function handleSearch(request: Request, env: Env) {
       headers: {
         "cache-control": `public, max-age=${SEARCH_CACHE_SECONDS}, stale-while-revalidate=86400`,
         "x-bitcase-index-version": active.version_id,
+        "x-bitcase-ranker-version": RANKER_VERSION,
         ...Object.fromEntries(corsHeaders(request, env)),
       },
     },
